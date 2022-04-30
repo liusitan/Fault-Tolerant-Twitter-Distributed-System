@@ -18,8 +18,6 @@ pub struct StorageClient {
 }
 #[async_trait]
 pub trait Newhack {
-    // async fn gget(&self, key: &str) -> TribResult<Option<String>>;
-
     async fn neww(addr: &str) -> StorageClient;
 }
 #[async_trait]
