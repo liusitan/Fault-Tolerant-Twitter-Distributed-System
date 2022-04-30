@@ -5,6 +5,8 @@ use std::hash::{Hash, Hasher};
 use tribbler::err::TribResult;
 use tribbler::storage::{BinStorage, Storage};
 
+use super::virtualized_bin_client::VirBinStorageClient;
+
 pub struct BinStorageClient {
     pub list_back: Vec<String>,
 }
@@ -27,10 +29,8 @@ impl BinStorage for BinStorageClient {
         // parameter `addr` is in the form of <host>:<port>, and it is always a valid TCP address
         // returned Storage is used as an interface
 
-        let sc = StorageClient {
-            addr: addr.to_string(),
-            cl: None,
-        };
+        let sc = <VirBinStorageClient as super::virtualized_bin_client::Newhack>::neww(&addr, name)
+            .await;
 
         return Ok(Box::new(sc));
     }
