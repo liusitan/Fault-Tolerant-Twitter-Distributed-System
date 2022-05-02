@@ -392,6 +392,10 @@ impl Server for FrontServer {
 
         // find all the posts
         let bin_user = self.bin_storage.bin(user).await?;
+
+        // add call to clock() before we get the posts
+        let _ = bin_user.clock(0).await?;
+
         let list = bin_user.list_get(&post_list(user.to_string())).await?;
         // parse all the tribs and sort them
         let mut trib_list_all: Vec<TribInfo> = Vec::new();
@@ -471,7 +475,7 @@ impl Server for FrontServer {
                 follow_count += 1;
             }
         }
-        if follow_count > MAX_FOLLOWING {
+        if follow_count >= MAX_FOLLOWING {
             let e = TribblerError::FollowingTooMany;
             return Err(Box::new(e));
         }
@@ -502,7 +506,8 @@ impl Server for FrontServer {
                 } else if entry_f.time > time {
                     // delete our entry and return OK
                     let _r = bin_user.list_remove(&k_v).await?;
-                    return Ok(());
+                    let e = TribblerError::AlreadyFollowing(who.to_string(), whom.to_string());
+                    return Err(Box::new(e));
                 }
             }
         }

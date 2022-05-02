@@ -87,7 +87,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         None => (),
     }
 
-    let mut interval = time::interval(time::Duration::from_secs(2));
+    let mut interval = time::interval(time::Duration::from_millis(800)); // keeper syncs the clock of backends every 800ms
     match kc.shutdown {
         Some(recv) => {
             // the following code is from https://users.rust-lang.org/t/wait-for-futures-in-loop/43007/3
@@ -105,7 +105,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
                         // exist if shutdown has received
                         return Ok(());
                     }
-                    _ = task_that_takes_a_second(kc.backs.clone()) => {
+                    _ = sync_backs_clock(kc.backs.clone()) => {
                         // do our task normally
                     }
                 };
@@ -114,7 +114,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
 
         None => loop {
             interval.tick().await;
-            task_that_takes_a_second(kc.backs.clone()).await;
+            sync_backs_clock(kc.backs.clone()).await;
         },
     }
 
@@ -126,7 +126,7 @@ pub async fn block_fn(mut recv: Receiver<()>) {
     return ();
 }
 
-async fn task_that_takes_a_second(backs: Vec<String>) -> TribResult<()> {
+async fn sync_backs_clock(backs: Vec<String>) -> TribResult<()> {
     let mut max_timestamp = 0;
     for back in backs.clone() {
         let mut client = TribStorageClient::connect(back.clone()).await?;
@@ -148,7 +148,6 @@ async fn task_that_takes_a_second(backs: Vec<String>) -> TribResult<()> {
             })
             .await?;
     }
-    time::sleep(time::Duration::from_secs(1)).await;
     return Ok(());
 }
 
