@@ -1,4 +1,5 @@
 use crate::lab2::client::StorageClient;
+use crate::lab2::virtualized_bin_client::VirBinStorageClient;
 use async_trait::async_trait;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -27,10 +28,8 @@ impl BinStorage for BinStorageClient {
         // parameter `addr` is in the form of <host>:<port>, and it is always a valid TCP address
         // returned Storage is used as an interface
 
-        let sc = StorageClient {
-            addr: addr.to_string(),
-            cl: None,
-        };
+        let sc = <VirBinStorageClient as super::virtualized_bin_client::Newhack>::neww(&addr, name)
+            .await;
 
         return Ok(Box::new(sc));
     }

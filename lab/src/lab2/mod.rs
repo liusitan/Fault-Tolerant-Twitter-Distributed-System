@@ -607,6 +607,7 @@ mod front;
 mod keeper;
 mod lab;
 mod server;
+mod virtualized_bin_client;
 pub use crate::lab2::lab::new_bin_client;
 pub use crate::lab2::lab::new_front;
 pub use crate::lab2::lab::serve_keeper;

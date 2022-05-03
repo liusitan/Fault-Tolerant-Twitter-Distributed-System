@@ -11,11 +11,11 @@ l2_test_concurrent_server_follows - [0/2] - your server handles concurrent follo
 
 l2_test_server_home_perf - [0/2] - home() on 1000 100-trib users returns in 7 seconds
     Reason: GC? TCP? TA said the getting all posts from all followers should be possible
-    Status: TODO: merge code of connection reuse
+    Status: TODO: verify with TA. Fixed.
 
 
 l2_test_multi_bin_lists - [0/2] - verifies that you can use multiple bins on a single backend which gives distinct results on the KeyList trait // Qihang Zeng above test cases
-    Status: TODO: merge code of Sitan.
+    Status: TODO: verify with TA. Fixed.
 
 l2_test_server_list_user_limit - [0/2] - list_user() returns less than 20 users when there are only 19 users signed up
     Status: Fixed.
