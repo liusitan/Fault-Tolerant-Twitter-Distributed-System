@@ -134,37 +134,6 @@ impl TribInfo {
     }
 }
 
-// fn main() {
-//     let t1 = TribInfo {
-//         post: "123456".to_string(),
-//         logical_time: 100,
-//         physical_time: 10,
-//         user: "Alice".to_string(),
-//     };
-//     let t2 = TribInfo {
-//         post: "123456".to_string(),
-//         logical_time: 98,
-//         physical_time: 10,
-//         user: "Ciri".to_string(),
-//     };
-//     let t3 = TribInfo {
-//         post: "123456".to_string(),
-//         logical_time: 102,
-//         physical_time: 10,
-//         user: "Bob".to_string(),
-//     };
-//     // let mut v = vec![t1,t2,t3,t4,t5,t6,t7,t8];
-//     let mut v = vec![t1, t2, t3];
-//     v.sort();
-
-//     for t in v {
-//         println!("{:?}", t);
-//         println!("{}", t.to_str());
-//         let t2 = TribInfo::from_str(&t.to_str());
-//         println!("{:?}", t2);
-//     }
-// }
-
 impl Ord for TribInfo {
     fn cmp(&self, other: &Self) -> Ordering {
         // (
@@ -179,11 +148,18 @@ impl Ord for TribInfo {
         //         &self.user,
         //         &self.post,
         //     ))
-        (self.logical_time, self.physical_time, &self.post).cmp(&(
-            other.logical_time,
-            other.physical_time,
-            &other.post,
-        ))
+        (
+            self.logical_time,
+            self.physical_time,
+            &self.user,
+            &self.post,
+        )
+            .cmp(&(
+                other.logical_time,
+                other.physical_time,
+                &other.user,
+                &other.post,
+            ))
     }
 }
 
@@ -319,6 +295,7 @@ impl Server for FrontServer {
                 break;
             }
         }
+        user_list.sort();
         return Ok(user_list);
     }
 

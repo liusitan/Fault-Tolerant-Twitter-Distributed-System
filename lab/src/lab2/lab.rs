@@ -87,34 +87,31 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         None => (),
     }
 
-    let mut interval = time::interval(time::Duration::from_millis(800)); // keeper syncs the clock of backends every 800ms
+    let mut dida = tokio::time::interval(time::Duration::from_secs(1)); // keeper syncs the clock of backends every 1000ms
+    let backs: Vec<String> = kc
+        .backs
+        .clone()
+        .iter()
+        .map(|x| "http://".to_string() + x)
+        .collect();
     match kc.shutdown {
-        Some(recv) => {
-            // the following code is from https://users.rust-lang.org/t/wait-for-futures-in-loop/43007/3
-            let (stop_read, mut time_to_stop): (oneshot::Sender<()>, _) = oneshot::channel();
-            tokio::spawn(async move {
-                block_fn(recv).await;
-                if let Err(_) = stop_read.send(()) {
-                    println!("something goes wrong during send");
+        Some(mut recv) => loop {
+            tokio::select! {
+                _ = dida.tick() => {
+                sync_backs_clock(backs.clone()).await;
                 }
-            });
-            loop {
-                interval.tick().await;
-                tokio::select! {
-                    _ = &mut time_to_stop => {
-                        // exist if shutdown has received
-                        return Ok(());
-                    }
-                    _ = sync_backs_clock(kc.backs.clone()) => {
-                        // do our task normally
-                    }
-                };
+                _ = recv.recv() => {
+                    break;
+                }
             }
-        }
+        },
 
         None => loop {
-            interval.tick().await;
-            sync_backs_clock(kc.backs.clone()).await;
+            tokio::select! {
+                _ = dida.tick() => {
+                    sync_backs_clock(backs.clone()).await;
+                }
+            }
         },
     }
 
