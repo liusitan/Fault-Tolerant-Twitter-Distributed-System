@@ -48,5 +48,5 @@ todo!();
 pub async fn new_front(
     bin_storage: Box<dyn BinStorage>,
 ) -> TribResult<Box<dyn Server + Send + Sync>> {
-todo!(); 
+todo!();
 }
