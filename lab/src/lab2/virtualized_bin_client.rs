@@ -15,8 +15,9 @@ use tribbler::storage::List;
 use tribbler::storage::Pattern;
 use tribbler::storage::{KeyList, KeyString, Storage};
 pub struct VirBinStorageClient {
-    pub addr: Vec<String>,
+    pub backs: Vec<String>,
     pub user_name: String,
+    hashid: u64,
     pub client1: client::StorageClient,
     pub client2: client::StorageClient,
 }
@@ -24,23 +25,49 @@ pub struct VirBinStorageClient {
 const addr1: &str = "A1";
 const addr2: &str = "A2";
 
-const SEPARATOR: &str = "|";
-#[async_trait]
-pub trait Newhack {
-    async fn neww(addrs: &Vec<String>, name: &str) -> VirBinStorageClient;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
+pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
-#[async_trait]
+const SEPARATOR: &str = "|";
 
-impl Newhack for VirBinStorageClient {
-    async fn neww(addrs: &Vec<String>, name: &str) -> VirBinStorageClient {
+impl VirBinStorageClient {
+    async fn new(addrs: &Vec<String>, name: &str) -> VirBinStorageClient {
+        let hid = calculate_hash(&(name.to_string()));
+
         return VirBinStorageClient {
-            addr: addrs.to_owned(),
+            backs: addrs.to_owned(),
+            hashid: hid,
             user_name: name.to_owned(),
-            client1: client::StorageClient::new(&addrs[0]).await,
-            client2: client::StorageClient::new(&addrs[1]).await,
+            client1: client::StorageClient::new(&addrs[hid]).await,
+            client2: client::StorageClient::new(&addrs[hid + 1]).await,
         };
     }
+    async fn reconfigureclient(){
+        let c1 ; 
+        let c2; 
+        let id = self.hashid;
+        loop{
+            match client::StorageClient::new(self.backs[id]).await? {
+                Ok(x) => c1 = x,
+                Err(_) => {id = id+1;continue;}
+            }
+    }
+    id = id+1;
+    loop{
+        match client::StorageClient::new(self.backs[id]).await? {
+            Ok(x) => c2 = x,
+            Err(_) => {id = id+1;continue;}
+        }
+    self.client1 = c1;
+    self.client2 = c2;
 }
+}
+
 impl VirBinStorageClient {
     fn wrap_with_user_name(&self, s: &str) -> String {
         //$$println!("wrapped name {:?}", self.user_name.clone() + "|" + s);
