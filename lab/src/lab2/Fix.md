@@ -3,7 +3,7 @@ Lab 2 Issues
 
 l2_test_clock_coarse_sync - [0/2] - clocks in different storage are coarsely synchronized
     Reason: 1 second?
-    Status: TODO: test with TA. Fixed
+    Status: TODO4: test with TA. Fixed
 
 l2_test_concurrent_server_follows - [0/2] - your server handles concurrent follows
     Reason: should be one error one Ok
@@ -11,17 +11,17 @@ l2_test_concurrent_server_follows - [0/2] - your server handles concurrent follo
 
 l2_test_server_home_perf - [0/2] - home() on 1000 100-trib users returns in 7 seconds
     Reason: GC? TCP? TA said the getting all posts from all followers should be possible
-    Status: TODO: verify with TA. Fixed.
+    Status: TODO1: verify with TA. Fixed.
 
 
 l2_test_multi_bin_lists - [0/2] - verifies that you can use multiple bins on a single backend which gives distinct results on the KeyList trait // Qihang Zeng above test cases
-    Status: TODO: verify with TA. Fixed.
+    Status: TODO3: verify with TA. Fixed.
 
 l2_test_server_list_user_limit - [0/2] - list_user() returns less than 20 users when there are only 19 users signed up
     Status: Fixed.
 
 l2_test_server_tribble_causal - [0/2] - your tribble order reflects causal relationship
-    Status: TODO: verify with TA. Fixed. 
+    Status: TODO2: verify with TA. Fixed. 
 
 
 l2_test_server_tribs_has_gc - [0/2] - Tribs() on a 5000-trib user does not read all 5000 tribs (has GC)lst
