@@ -3,7 +3,7 @@ use tribbler::{
 };
 
 // for binstorage
-use crate::lab2::{binstorage::BinStorageClient, client::StorageClient, front::FrontServer};
+use crate::lab2::{binstorage::BinStorageClient, binstorage::calculate_hash, client::StorageClient, front::FrontServer};
 use std::net::{SocketAddr, ToSocketAddrs};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
@@ -205,6 +205,12 @@ pub struct BackendStatus {
     liveness: bool, // whether this backend is alive or not
 }
 
+// ChordObject is an object stored on the ring of Chord
+pub struct ChordObject {
+    hash: u64, // hash = hash(addr)
+    addr: String,
+    prev: Box<ChordObject>,
+}
 
 /// this async function accepts a [KeeperConfig] that should be used to start
 /// a new keeper server on the address given in the config.
@@ -269,12 +275,21 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         .iter()
         .map(|x| "http://".to_string() + x)
         .collect();
-    // // assign all backs to N keepers. Each back is randomly assigned to 3 keepers
-    // let mut vec_keeper : Vec<KeeperClient> = Vec::new();
+
+
+    // assign all backs to N keepers. Each back is randomly assigned to 3 keepers
+    let mut vec_keeper : Vec<KeeperClient> = Vec::new();
+    
+    // TODO: put keepers and backends to the chord ring
+
     // for addr in kc.addrs {
     //     vec_keeper.push(KeeperClient {
-    //         addr: addr,
-    //         backs: Vec::new(),
+    //         keeper_addr: addr.clone(),
+    //         list_back_recover: Vec::new(),
+    //         list_back_clock: Vec::new(),
+        
+    //         prev_alive_keeper_addr: "".to_string(), // this should be updated
+    //         prev_alive_keeper_list_back: Vec::new(),
     //     })
     // }
     // let N = vec_keeper.len();
