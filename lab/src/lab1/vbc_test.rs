@@ -123,11 +123,11 @@ impl KeyString for VirBinStorageClient {
                 cmax = c;
             }
         });
-        // println!("{:?} cmax:{}", vret, cmax);
+        println!("{:?} cmax:{}", vret, cmax);
         res2.iter().for_each(|x| {
             let (v, c) = ks_log_value_unwrapper(x);
             if (c > cmax) {
-                // println!("{}", c);
+                println!("{}", c);
                 if (v.eq("")) {
                     vret = None;
                 } else {
@@ -136,12 +136,12 @@ impl KeyString for VirBinStorageClient {
                 cmax = c;
             }
         });
-        // println!("{:?}", vret);
+        println!("{:?}", vret);
 
         return Ok(vret);
     }
     async fn set(&self, kv: &KeyValue) -> TribResult<bool> {
-        // println!("ssssssssss{:?}", kv);
+        println!("ssssssssss{:?}", kv);
         let mut kv_log = kv.clone();
         // let composed_key = );
         let c = self.clock(0).await?;
@@ -149,13 +149,11 @@ impl KeyString for VirBinStorageClient {
         kv_log.value = ks_log_value_wrapper(&kv_log.value.as_str(), c);
 
         match self.client1.list_append(&kv_log).await {
-            // Ok(x) => (println!("{}", x)),
-            Ok(_) => (),
+            Ok(x) => (println!("{}", x)),
             Err(_) => todo!(),
         };
         match self.client2.list_append(&kv_log).await {
-            // Ok(x) => (println!("{}", x)),
-            Ok(_) => (),
+            Ok(x) => (println!("{}", x)),
             Err(_) => todo!(),
         };
         return Ok(true);
@@ -164,7 +162,7 @@ impl KeyString for VirBinStorageClient {
     /// List all the keys of non-empty pairs where the key matches
     /// the given pattern.
     async fn keys(&self, p: &Pattern) -> TribResult<List> {
-        // println!("kkkkkkkk");
+        println!("kkkkkkkk");
         let mut p_clone = p.clone();
         p_clone.prefix = self.wrap_with_user_name(&ks_log_key_wrapper(&p_clone.prefix));
         let l1 = match self.client1.list_keys(&p_clone).await {
@@ -175,7 +173,7 @@ impl KeyString for VirBinStorageClient {
             l1.0.iter()
                 .map(|x| ks_log_key_unwrapper(&self.unwrap_with_user_name(x)))
                 .collect();
-        // println!("length:{} res1: {:?}", l1.0.len(), res1);
+        println!("length:{} res1: {:?}", l1.0.len(), res1);
         let l2 = match self.client2.list_keys(&p_clone).await {
             Ok(x) => x,
             Err(_) => todo!(),
@@ -184,7 +182,7 @@ impl KeyString for VirBinStorageClient {
             l2.0.iter()
                 .map(|x| ks_log_key_unwrapper(&self.unwrap_with_user_name(x)))
                 .collect();
-        // println!("length:{} res2: {:?}", l2.0.len(), res2);
+        println!("length:{} res2: {:?}", l2.0.len(), res2);
         let mut res: HashSet<String> = res2.clone().into_iter().collect();
         res1.iter().for_each(|x| {
             res.insert(x.clone());
@@ -259,7 +257,7 @@ fn merge_two_list(l1: &Vec<ListOpLog>, l2: &Vec<ListOpLog>) -> Vec<ListOpLog> {
 fn compute_current_list(l: &Vec<ListOpLog>) -> Vec<String> {
     let mut res: Vec<String> = vec![];
     let mut s: HashSet<u64> = vec![].into_iter().collect();
-    // println!("{:?}", l);
+    println!("{:?}", l);
     l.iter().for_each(|x| {
         let log = x;
         if (!s.contains(&log.clock)) {
@@ -278,7 +276,7 @@ fn compute_current_list(l: &Vec<ListOpLog>) -> Vec<String> {
             s.insert(log.clock);
         }
     });
-    // println!("{:?}", res);
+    println!("{:?}", res);
     return res;
 }
 
@@ -294,7 +292,7 @@ fn compute_current_list(l: &Vec<ListOpLog>) -> Vec<String> {
 #[async_trait] // VERY IMPORTANT !!
 impl KeyList for VirBinStorageClient {
     async fn list_get(&self, key: &str) -> TribResult<List> {
-        // println!("llllllllllll");
+        println!("llllllllllll");
         let wrappedkey = self.wrap_with_user_name(&kl_log_key_wrapper(key));
         let mut c1list: Vec<ListOpLog> = match self.client1.list_get(&wrappedkey).await {
             Ok(x) => {
@@ -307,7 +305,7 @@ impl KeyList for VirBinStorageClient {
             }
             Err(err) => todo!(),
         };
-        // println!("{:?}", c1list);
+        println!("{:?}", c1list);
         let mut c2list: Vec<ListOpLog> = match self.client2.list_get(&wrappedkey).await {
             Ok(x) => {
                 x.0.iter()
@@ -319,7 +317,7 @@ impl KeyList for VirBinStorageClient {
             }
             Err(err) => todo!(),
         };
-        // println!("{:?}", c2list);
+        println!("{:?}", c2list);
 
         c1list.sort_by_key(|x| x.clock);
         c2list.sort_by_key(|x| x.clock);
@@ -385,7 +383,7 @@ impl KeyList for VirBinStorageClient {
     /// List all the keys of non-empty lists, where the key matches
     /// the given pattern.
     async fn list_keys(&self, p: &Pattern) -> TribResult<List> {
-        // println!("xxxxxxxxxxxxxx");
+        println!("xxxxxxxxxxxxxx");
 
         let mut p_clone = p.clone();
         p_clone.prefix = self.wrap_with_user_name(&kl_log_key_wrapper(&p_clone.prefix));
@@ -393,12 +391,12 @@ impl KeyList for VirBinStorageClient {
             Ok(x) => x.0,
             Err(err) => todo!(),
         };
-        // println!("xxxxxxx{:?}", k1);
+        println!("xxxxxxx{:?}", k1);
         let k2 = match self.client2.list_keys(&p_clone).await {
             Ok(x) => x.0,
             Err(err) => todo!(),
         };
-        // println!("xxxxxxxx{:?}", k2);
+        println!("xxxxxxxx{:?}", k2);
 
         let mut res: HashSet<String> = k1
             .iter()
@@ -414,3 +412,29 @@ impl KeyList for VirBinStorageClient {
         });
     }
 }
+
+// #[async_trait] // VERY IMPORTANT !!
+// impl storage::KeyList for BinStorageClient {
+//     async fn list_get(&self, key: &str) -> TribResult<List> {
+//         let mut client = TribBinStorageClient::connect(self.addr.clone()).await?;
+//         let r = client
+//             .list_get(Key {
+//                 key: key.to_string(),
+//             })
+//             .await?;
+//         match r.into_inner().value {
+//             value => Ok(value),
+//         }
+//     }
+
+//     /// Append a string to the list. return true when no error.
+//     async fn list_append(&self, kv: &KeyValue) -> TribResult<bool>;
+
+//     /// Removes all elements that are equal to `kv.value` in list `kv.key`
+//     /// returns the number of elements removed.
+//     async fn list_remove(&self, kv: &KeyValue) -> TribResult<u32>;
+
+//     /// List all the keys of non-empty lists, where the key matches
+//     /// the given pattern.
+//     async fn list_keys(&self, p: &Pattern) -> TribResult<List>;
+// }

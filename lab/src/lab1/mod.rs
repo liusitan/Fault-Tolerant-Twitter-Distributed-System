@@ -570,3 +570,4 @@ pub use crate::lab1::lab::new_client;
 pub use crate::lab1::lab::serve_back;
 pub mod client;
 mod server;
+mod vbc_test;
