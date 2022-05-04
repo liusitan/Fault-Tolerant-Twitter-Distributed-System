@@ -15,7 +15,7 @@ use tribbler::storage::List;
 use tribbler::storage::Pattern;
 use tribbler::storage::{KeyList, KeyString, Storage};
 pub struct VirBinStorageClient {
-    pub addr: String,
+    pub addr: Vec<String>,
     pub user_name: String,
     pub client1: client::StorageClient,
     pub client2: client::StorageClient,
@@ -27,17 +27,17 @@ const addr2: &str = "A2";
 const SEPARATOR: &str = "|";
 #[async_trait]
 pub trait Newhack {
-    async fn neww(addr: &str, name: &str) -> VirBinStorageClient;
+    async fn neww(addrs: &Vec<String>, name: &str) -> VirBinStorageClient;
 }
 #[async_trait]
 
 impl Newhack for VirBinStorageClient {
-    async fn neww(addr: &str, name: &str) -> VirBinStorageClient {
+    async fn neww(addrs: &Vec<String>, name: &str) -> VirBinStorageClient {
         return VirBinStorageClient {
-            addr: addr.to_owned(),
+            addr: addrs.to_owned(),
             user_name: name.to_owned(),
-            client1: <client::StorageClient as client::Newhack>::neww(addr).await,
-            client2: <client::StorageClient as client::Newhack>::neww(addr).await,
+            client1: client::StorageClient::new(&addrs[0]).await,
+            client2: client::StorageClient::new(&addrs[1]).await,
         };
     }
 }

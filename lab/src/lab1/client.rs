@@ -16,13 +16,9 @@ pub struct StorageClient {
     pub addr: String,
     pub channels: Vec<Mutex<channel::Channel>>,
 }
-#[async_trait]
-pub trait Newhack {
-    async fn neww(addr: &str) -> StorageClient;
-}
-#[async_trait]
-impl Newhack for StorageClient {
-    async fn neww(addr: &str) -> StorageClient {
+
+impl StorageClient {
+    pub async fn new(addr: &str) -> StorageClient {
         let mut channels = vec![];
         for i in 0..10 {
             let ep = match Endpoint::from_shared(addr.to_string()) {

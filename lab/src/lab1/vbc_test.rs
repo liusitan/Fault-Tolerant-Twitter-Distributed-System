@@ -36,8 +36,8 @@ impl Newhack for VirBinStorageClient {
         return VirBinStorageClient {
             addr: addr.to_owned(),
             user_name: name.to_owned(),
-            client1: <client::StorageClient as client::Newhack>::neww(addr).await,
-            client2: <client::StorageClient as client::Newhack>::neww(addr).await,
+            client1: client::StorageClient::new(addr).await,
+            client2: client::StorageClient::new(addr).await,
         };
     }
 }

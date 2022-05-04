@@ -601,13 +601,13 @@
 //!
 //! ## Happy Lab 2!
 //!
-mod binstorage;
-mod client;
-mod front;
-mod keeper;
-mod lab;
-mod server;
-mod virtualized_bin_client;
+pub mod binstorage;
+pub mod client;
+pub mod front;
+pub mod keeper;
+pub mod lab;
+pub mod server;
+pub mod virtualized_bin_client;
 pub use crate::lab2::lab::new_bin_client;
 pub use crate::lab2::lab::new_front;
 pub use crate::lab2::lab::serve_keeper;

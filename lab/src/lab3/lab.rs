@@ -21,7 +21,14 @@ use tribbler::rpc::trib_storage_client::TribStorageClient;
 /// underlying storage system.
 #[allow(unused_variables)]
 pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage>> {
-  todo!(); 
+    let mut http_backs: Vec<String> = Vec::new();
+    for back in backs {
+        http_backs.push("http://".to_string() + &back);
+    }
+    let bs = BinStorageClient {
+        list_back: http_backs,
+    };
+    return Ok(Box::new(bs));
 }
 
 /// this async function accepts a [KeeperConfig] that should be used to start
@@ -32,7 +39,86 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
 /// started.
 #[allow(unused_variables)]
 pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
-todo!();
+    let addr = match kc.addrs[0].to_socket_addrs() {
+        Ok(mut iterator) => match iterator.next() {
+            Some(first_addr) => first_addr,
+            None => {
+                match kc.ready {
+                    Some(send) => {
+                        let send_result = send.send(false);
+                        match send_result {
+                            Ok(()) => (),
+                            Err(e) => (),
+                        }
+                    }
+                    None => (),
+                }
+                return Err(Box::new(TribblerError::Unknown(
+                    "Error during iterator of to_socket_addrs()".to_string(),
+                )));
+            }
+        },
+
+        Err(error) => {
+            match kc.ready {
+                Some(send) => {
+                    let send_result = send.send(false);
+                    match send_result {
+                        Ok(()) => (),
+                        Err(e) => (),
+                    }
+                }
+                None => (),
+            }
+            return Err(Box::new(TribblerError::Unknown(
+                "Error during to_socket_addrs()".to_string(),
+            )));
+        }
+    };
+
+    match kc.ready {
+        Some(send) => {
+            let send_result = send.send(true);
+            match send_result {
+                Ok(()) => (),
+                Err(e) => (),
+            }
+        }
+        None => (),
+    }
+
+    // let mut interval = time::interval(time::Duration::from_secs(2));
+    // match kc.shutdown {
+    //     Some(recv) => {
+    //         // the following code is from https://users.rust-lang.org/t/wait-for-futures-in-loop/43007/3
+    //         let (stop_read, mut time_to_stop): (oneshot::Sender<()>, _) = oneshot::channel();
+    //         tokio::spawn(async move {
+    //             block_fn(recv).await;
+    //             if let Err(_) = stop_read.send(()) {
+    //                 println!("something goes wrong during send");
+    //             }
+    //         });
+    //         loop {
+    //             interval.tick().await;
+    //             tokio::select! {
+    //                 _ = &mut time_to_stop => {
+    //                     // exist if shutdown has received
+    //                     return Ok(());
+    //                 }
+    //                 _ = task_that_takes_a_second(kc.backs.clone()) => {
+    //                     // do our task normally
+    //                 }
+    //             };
+    //         }
+    //     }
+
+    //     None => loop {
+    //         interval.tick().await;
+    //         task_that_takes_a_second(kc.backs.clone()).await;
+    //     },
+    // }
+
+    return Ok(());
 }
 
 /// this function accepts a [BinStorage] client which should be used in order to
@@ -48,5 +134,8 @@ todo!();
 pub async fn new_front(
     bin_storage: Box<dyn BinStorage>,
 ) -> TribResult<Box<dyn Server + Send + Sync>> {
-todo!();
+    let a = FrontServer {
+        bin_storage: bin_storage,
+    };
+    return Ok(Box::new(a));
 }

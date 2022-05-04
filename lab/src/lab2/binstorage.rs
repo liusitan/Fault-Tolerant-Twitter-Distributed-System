@@ -29,8 +29,11 @@ impl BinStorage for BinStorageClient {
         // parameter `addr` is in the form of <host>:<port>, and it is always a valid TCP address
         // returned Storage is used as an interface
 
-        let sc = <VirBinStorageClient as super::virtualized_bin_client::Newhack>::neww(&addr, name)
-            .await;
+        let sc = <VirBinStorageClient as super::virtualized_bin_client::Newhack>::neww(
+            &self.list_back,
+            name,
+        )
+        .await;
 
         return Ok(Box::new(sc));
     }

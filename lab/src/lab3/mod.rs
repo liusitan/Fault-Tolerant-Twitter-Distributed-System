@@ -167,3 +167,5 @@
 //! if they feel the need.
 //!
 //! Happy Lab 3. :-)
+mod dumbkeeper;
+mod lab;
