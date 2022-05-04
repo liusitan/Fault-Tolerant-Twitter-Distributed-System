@@ -1,8 +1,11 @@
+#![allow(unused_parens)]
 use std::collections::HashSet;
 
 use crate::lab1::client;
 // use crate::lab1::client::Newhack;
 use async_trait::async_trait;
+use serde::Deserialize;
+use serde::Serialize;
 use tribbler::err::TribResult;
 use tribbler::rpc;
 use tribbler::rpc::Key;
@@ -43,7 +46,7 @@ impl VirBinStorageClient {
         //$$println!("wrapped name {:?}", self.user_name.clone() + "|" + s);
         self.user_name.clone() + SEPARATOR + s
     }
-    fn dewrap_with_user_name(&self, s: &str) -> String {
+    fn unwrap_with_user_name(&self, s: &str) -> String {
         let idx = s.find(SEPARATOR).unwrap();
         return s[(idx + 1)..].to_string();
     }
@@ -61,11 +64,15 @@ impl Storage for VirBinStorageClient {
             Err(_) => todo!(),
         };
         let mut cmax = std::cmp::max(c1, c2);
-        c1 = match self.client1.clock(at_least).await {
+        c1 = match self.client1.clock(cmax).await {
             Ok(x) => x,
             Err(_) => todo!(),
         };
-        let c2 = match self.client2.clock(at_least).await {
+        c1 = match self.client1.clock(cmax).await {
+            Ok(x) => x,
+            Err(_) => todo!(),
+        };
+        let c2 = match self.client2.clock(cmax).await {
             Ok(x) => x,
             Err(_) => todo!(),
         };
@@ -74,9 +81,13 @@ impl Storage for VirBinStorageClient {
     }
 }
 fn ks_log_key_wrapper(s: &str) -> String {
-    return "list#keystring#".to_string() + s;
+    return "log#keystring#".to_string() + SEPARATOR + s;
 }
-
+fn ks_log_key_unwrapper(s: &str) -> String {
+    let id = s.find(SEPARATOR).unwrap();
+    let k = s[id + 1..].to_string();
+    return k;
+}
 fn ks_log_value_wrapper(v: &str, clock: u64) -> String {
     return clock.to_string() + SEPARATOR + v;
 }
@@ -89,7 +100,7 @@ fn ks_log_value_unwrapper(s: &str) -> (String, u64) {
 #[async_trait] // VERY IMPORTANT !!
 impl KeyString for VirBinStorageClient {
     async fn get(&self, key: &str) -> TribResult<Option<String>> {
-        let composed_key = ks_log_key_wrapper(&self.wrap_with_user_name(key));
+        let composed_key = self.wrap_with_user_name(&ks_log_key_wrapper(key));
         let res1 = match self.client1.list_get(composed_key.as_str()).await {
             Ok(x) => x.0,
             Err(_) => todo!(),
@@ -120,13 +131,19 @@ impl KeyString for VirBinStorageClient {
     }
     async fn set(&self, kv: &KeyValue) -> TribResult<bool> {
         let mut kv_log = kv.clone();
-        let composed_key = self.wrap_with_user_name(kv_log.key.as_str());
+        // let composed_key = );
         let c = self.clock(0).await?;
-        kv_log.key = ks_log_key_wrapper(&composed_key);
+        kv_log.key = self.wrap_with_user_name(&ks_log_key_wrapper(kv_log.key.as_str()));
         kv_log.value = ks_log_value_wrapper(&kv_log.value.as_str(), c);
 
-        self.client1.list_append(&kv_log).await?;
-        self.client2.list_append(&kv_log).await?;
+        match self.client1.list_append(&kv_log).await {
+            Ok(_) => (),
+            Err(_) => todo!(),
+        };
+        match self.client2.list_append(&kv_log).await {
+            Ok(_) => (),
+            Err(_) => todo!(),
+        };
         return Ok(true);
     }
 
@@ -134,56 +151,223 @@ impl KeyString for VirBinStorageClient {
     /// the given pattern.
     async fn keys(&self, p: &Pattern) -> TribResult<List> {
         let mut p_clone = p.clone();
-        p_clone.prefix = ks_log_key_wrapper(&self.wrap_with_user_name(&p_clone.prefix));
-        let l1 = self.client1.keys(&p_clone).await?;
-        let res1: Vec<String> = l1.0.iter().map(|x| self.dewrap_with_user_name(x)).collect();
-        let l2 = self.client1.keys(&p_clone).await?;
-        let res2: Vec<String> = l2.0.iter().map(|x| self.dewrap_with_user_name(x)).collect();
+        p_clone.prefix = self.wrap_with_user_name(&ks_log_key_wrapper(&p_clone.prefix));
+        let l1 = match self.client1.keys(&p_clone).await {
+            Ok(x) => x,
+            Err(_) => todo!(),
+        };
+        let res1: Vec<String> = l1.0.iter().map(|x| ks_log_key_unwrapper(&self.unwrap_with_user_name(x))).collect();
+        let l2 = match self.client1.keys(&p_clone).await {
+            Ok(x) => x,
+            Err(_) => todo!(),
+        };
+        let res2: Vec<String> = l2.0.iter().map(|x|ks_log_key_unwrapper(&self.unwrap_with_user_name(x))).collect();
         // let res = Set::new(res2);
-        let mut res: HashSet<String> = res2.into_iter().collect();
+        let mut res: HashSet<String> = res2.clone().into_iter().collect();
         res1.iter().map(|x| {
             res.insert(x.clone());
         });
+
         return Ok(List {
-            0: res.into_iter().collect(),
+            0: res
+                .into_iter()
+                .map(|x| {
+                    return ks_log_key_unwrapper(&x);
+                })
+                .collect(),
         });
     }
 }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ListOpLog {
+    op: ListOp,
+    clock: u64,
+    value: String,
+}
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ListRemoveLog {
+    clock: u64,
+    value: String,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+
+enum ListOp {
+    Append,
+    Remove,
+}
+
+fn kl_log_key_wrapper(s: &str) -> String {
+    return "log#keylist#".to_string() + SEPARATOR + s;
+}
+fn kl_log_key_unwrapper(s: &str) -> String {
+    let id = s.find(SEPARATOR).unwrap();
+    let k = s[id + 1..].to_string();
+    return k;
+}
+fn merge_two_list(l1: &Vec<ListOpLog>, l2: &Vec<ListOpLog>) -> Vec<ListOpLog> {
+    let mut res = vec![];
+    let length1 = l1.len();
+    let length2 = l2.len();
+    let mut j = 0;
+    let mut i1 = 0;
+    let mut i2 = 0; //
+    while (i1 < length1 || i2 < length2) {
+        if (i1 == length1) {
+            res.push(l1[i1].clone());
+            i2 += 1;
+            continue;
+        }
+        if (i2 == length2) {
+            res.push(l2[i2].clone());
+            i1 += 1;
+            continue;
+        }
+        let e1 = l1[i1];
+        let e2 = l2[i2];
+        if (e1.clock == e2.clock) {
+            res.push(e1.clone());
+            i1 += 1;
+            i2 += 1;
+        } else if (e1.clock < e2.clock) {
+            res.push(e1.clone());
+            i1 += 1;
+        } else {
+            res.push(e2.clone());
+            i2 += 1;
+        }
+    }
+    return res;
+}
+fn compute_current_list(l: &Vec<ListOpLog>) -> Vec<String> {
+    let mut res: Vec<String> = vec![];
+    let mut s: HashSet<u64> =  HashSet<u64>();
+
+    l.iter().map(|x| {
+        let log = x;
+        if(!s.has(log.clock)){
+            match x.op.clone() {
+                ListOp::Append => {
+                    res.push(log.value);
+                },
+                ListOp::Remove => {
+                    res = res.iter().filter(|x| x.value == log.value).collect();
+                    
+                }
+            }
+            s.insert(log.clock);
+        }
+    });
+   return res; 
+}
+
+// fn kl_log_kv_wrapper(lr: &ListRemoveLog, clock: u64) -> TribResult<String> {
+//     return Ok(clock.to_string() + SEPARATOR + serde_json::to_string(kv));
+// }
+// fn kl_log_kv_unwrapper(s: &str) -> TribResult<(KeyValue, u64)> {
+//     let id = s.find(SEPARATOR).unwrap();
+//     let c = s[0..id].parse::<u64>();
+//     let kv: KeyValue = serde_json::from_str(s)?;
+//     return Ok((c, kv));
+// }
 #[async_trait] // VERY IMPORTANT !!
 impl KeyList for VirBinStorageClient {
     async fn list_get(&self, key: &str) -> TribResult<List> {
-        self.client1
-            .list_get(self.wrap_with_user_name(key).as_str())
-            .await
+        let wrappedkey = self.wrap_with_user_name(&kl_log_key_wrapper(key));
+        let c1list: Vec<ListOpLog> = match self.client1.list_get(&wrappedkey).await {
+            Ok(x) => {
+                x.0.iter()
+                    .map(|x| {
+                        let r: ListOpLog = serde_json::from_str(x).expect("ListOpLog");
+                        return r;
+                    })
+                    .collect()
+            }
+            Err(err) => todo!(),
+        };
+        let c2list: Vec<ListOpLog> = match self.client2.list_get(&wrappedkey).await {
+            Ok(x) => {
+                x.0.iter()
+                    .map(|x| {
+                        let r: ListOpLog = serde_json::from_str(x).expect("ListOpLog");
+                        return r;
+                    })
+                    .collect()
+            }
+            Err(err) => todo!(),
+        };
+        c1list.sort_by_key(|x| x.clock);
+        c2list.sort_by_key(|x| x.clock);
+        let mereged = merge_two_list(&c1list, &c2list);
+        return Ok(compute_current_list(&merged));
     }
     /// Append a string to the list. return true when no error.
     async fn list_append(&self, kv: &KeyValue) -> TribResult<bool> {
-        let mut kv_clone = kv.clone();
-        let composed_key = self.wrap_with_user_name(kv_clone.key.as_str());
-        kv_clone.key = composed_key;
-        Ok(self.client1.list_append(&kv_clone).await?.clone())
+        let c = self.clock(0).await?;
+        let wrappedkey = kl_log_key_wrapper(&self.wrap_with_user_name(&kv.key));
+        let value = ListOpLog{
+            op:ListOp::Append,
+            clock:c,
+            value:kv.value,
+        };
+        let kv_send = KeyValue{
+            key:wrappedkey,
+            value:value
+        };
+        let c1= match self.client1.list_append(&kv_send).await{
+Ok(x) => x,
+Err(err) => todo!(),
+        };
+        let c2= match self.client1.list_append(&kv_send).await{
+            Ok(x) => x,
+            Err(err) => todo!(),
+        };
+        return Ok(true);
     }
     /// Removes all elements that are equal to `kv.value` in list `kv.key`
     /// returns the number of elements removed.
     async fn list_remove(&self, kv: &KeyValue) -> TribResult<u32> {
-        let mut kv_clone = kv.clone();
-        let composed_key = self.wrap_with_user_name(kv_clone.key.as_str());
-        kv_clone.key = composed_key;
-        self.client1.list_remove(&kv_clone).await
+        let c = self.clock(0).await?;
+        let wrappedkey = self.wrap_with_user_name(&kl_log_key_wrapper(key));
+        let value = ListOpLog{
+            op:ListOp::Remove,
+            clock:c,
+            value:kv.value,
+        };
+        let kv_send = KeyValue{
+            key:wrappedkey,
+            value:value
+        };
+        let c1= match self.client1.list_append(&kv_send).await{
+Ok(x) => x,
+Err(err) => todo!(),
+        };
+        let c2= match self.client1.list_append(&kv_send).await{
+            Ok(x) => x,
+            Err(err) => todo!(),
+        };
+        return Ok(true);
     }
     /// List all the keys of non-empty lists, where the key matches
     /// the given pattern.
     async fn list_keys(&self, p: &Pattern) -> TribResult<List> {
         let mut p_clone = p.clone();
-        p_clone.prefix = self.wrap_with_user_name(&p_clone.prefix);
-        let tmp = self.client1.list_keys(&p_clone).await?;
-        let res_: Vec<String> = tmp
-            .0
-            .iter()
-            .map(|x| self.dewrap_with_user_name(x))
-            .collect();
-        Ok(List { 0: res_ })
+        p_clone.prefix =  self.wrap_with_user_name(&kl_log_key_wrapper(&p_clone.prefix));
+        let k1 = match self.client1.list_keys(&p_clone).await{
+            Ok(x) => x.0,
+            Err(err) => todo!(),
+        };
+        let k2 = match self.client2.list_keys(&p_clone).await{
+            Ok(x) => x.0,
+            Err(err) => todo!(),
+        };
+        let res:HashSet<String>= k1.iter().map(|x|{
+            return kl_log_key_unwrapper(&self.unwrap_with_user_name(x));
+        }).collect();
+        k2.iter().for_each(|x|{
+            res.insert(kl_log_key_unwrapper(&self.unwrap_with_user_name(x)));
+        });
+        return res.iter().collect();
     }
 }
 
