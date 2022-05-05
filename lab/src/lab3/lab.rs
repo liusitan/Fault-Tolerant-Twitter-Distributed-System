@@ -3,10 +3,7 @@ use tribbler::{
 };
 
 // for binstorage
-use crate::lab2::{
-    binstorage::calculate_hash, binstorage::BinStorageClient, client::StorageClient,
-    front::FrontServer,
-};
+use crate::lab3::{binstorage::BinStorageClient, binstorage::calculate_hash, client::StorageClient, front::FrontServer, keeperserver::KeeperServer};
 use std::net::{SocketAddr, ToSocketAddrs};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
@@ -20,7 +17,6 @@ use std::time::{Duration, SystemTime};
 use tokio::time;
 use tribbler::rpc;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
-const PRINT_DEBUG: bool = true;
 
 /// This function accepts a list of backend addresses, and returns a
 /// type which should implement the [BinStorage] trait to access the
@@ -37,186 +33,6 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
     return Ok(Box::new(bs));
 }
 
-const CLOCK_TIMEOUT_MS: u64 = 300;
-
-pub struct KeeperClient {
-    keeper_addr: String,                   // addr of this keeper
-    list_back_recover: Vec<BackendStatus>, // list of backends that this keeper is responsible for (controls migrate and join)
-    list_back_clock: Vec<BackendStatus>, // list of backends that this keeper needs to sync the clock for. This list includes list_back
-
-    prev_alive_keeper_addr: String, // addr of its previous alive keeper. This should be updated
-    prev_alive_keeper_list_back: Vec<BackendStatus>, // list of backends that previous keeper is responsible for
-                                                     // this keeper will check their liveness every 10 seconds
-}
-
-impl KeeperClient {
-    fn add_back_recover(&mut self, back: String) {
-        self.list_back_recover.push(BackendStatus {
-            back_addr: back,
-            liveness: true, // TODO: check if this is true or false
-        });
-    }
-
-    fn add_back_clock(&mut self, back: String) {
-        self.list_back_clock.push(BackendStatus {
-            back_addr: back,
-            liveness: true, // TODO: check if this is true or false
-        });
-    }
-
-    fn add_prev_keeper(&mut self, keeper: KeeperClient) {
-        self.prev_alive_keeper_addr = keeper.keeper_addr;
-        self.prev_alive_keeper_list_back = keeper.list_back_recover.clone();
-    }
-
-    fn find_back_recover(&self, addr: String) -> Option<BackendStatus> {
-        for back in self.list_back_recover.clone() {
-            if back.back_addr == addr {
-                return Some(back);
-            }
-        }
-        return None;
-    }
-
-    fn set_back_recover_liveness(&mut self, addr: String, liveness: bool) {
-        let mut list_back_copy = self.list_back_recover.clone();
-        for mut back in list_back_copy.iter_mut() {
-            if back.back_addr == addr {
-                back.liveness = liveness;
-            }
-        }
-        self.list_back_recover = list_back_copy;
-    }
-
-    // hear_beat will sync the clock of all backends in list_back_clock
-    // (1) if fail to connect to a backend, and it is in list_back_recover, and it was alive in the last round, then we wait for CLOCK_TIMEOUT_MS milliseconds and try again
-    //      if it still fails, we observed a backend failure. We will run the migration procedure
-    // (2) if suc to connect to a backend, and it is in list_back_recover, and it was dead in the last round
-    //      we observed a backend join. We will run the join procedure
-    // (3) check if its previous alive keeper is now dead
-    // (4) check if any keeper between it and its previous alive keeper is now added
-    async fn heart_beat(&mut self) -> TribResult<()> {
-        let now = SystemTime::now();
-
-        let mut max_timestamp = 0;
-        let mut list_dead_addr: Vec<String> = Vec::new();
-        let mut list_alive_addr: Vec<String> = Vec::new();
-        for back in self.list_back_clock.clone() {
-            // TODO: see how to reuse connection here and below
-            let addr = back.back_addr;
-            match TribStorageClient::connect(addr.clone()).await {
-                Ok(mut client) => {
-                    let r = client
-                        .clock(rpc::Clock {
-                            timestamp: max_timestamp,
-                        })
-                        .await?;
-                    let t = r.into_inner().timestamp;
-                    if t > max_timestamp {
-                        max_timestamp = t;
-                    }
-                    list_alive_addr.push(addr.clone());
-                }
-                Err(e) => {
-                    list_dead_addr.push(addr.clone());
-                }
-            };
-        }
-
-        if PRINT_DEBUG {
-            println!(
-                "This keeper observe {} alive backends and {} dead backends",
-                list_alive_addr.len(),
-                list_dead_addr.len()
-            );
-        }
-
-        // sync the clock of alive backends
-        for addr in list_alive_addr.clone() {
-            let mut client = TribStorageClient::connect(addr.clone()).await?;
-            let r = client
-                .clock(rpc::Clock {
-                    timestamp: max_timestamp,
-                })
-                .await?;
-        }
-
-        // (2) if suc to connect to a backend, and it is in list_back_recover, and it was dead in the last round
-        //      we observed a backend join. We will run the join procedure
-        for addr in list_alive_addr {
-            match self.find_back_recover(addr.clone()) {
-                Some(back) => {
-                    if back.liveness == false {
-                        self.set_back_recover_liveness(back.back_addr, true);
-
-                        // TODO: handle join
-                    }
-                }
-                None => println!("Error: impossible None result in step (2)"),
-            }
-        }
-
-        // sleep before (1)
-        // TODO: do we really need this?
-        sleep(Duration::from_millis(CLOCK_TIMEOUT_MS));
-
-        // (1) if fail to connect to a backend, and it is in list_back_recover, and it was alive in the last round, then we wait for CLOCK_TIMEOUT_MS milliseconds and try again
-        //      if it still fails, we observed a backend failure. We will run the migration procedure
-
-        for addr in list_dead_addr {
-            match self.find_back_recover(addr.clone()) {
-                Some(back) => {
-                    if back.liveness == true {
-                        let addr = back.back_addr;
-                        match TribStorageClient::connect(addr.clone()).await {
-                            Ok(mut client) => {
-                                // this backend is actually alive. Sync its clock
-                                let r = client
-                                    .clock(rpc::Clock {
-                                        timestamp: max_timestamp,
-                                    })
-                                    .await?;
-                            }
-                            Err(_) => {
-                                // this backend is really newly dead
-                                self.set_back_recover_liveness(addr.clone(), false);
-
-                                // TODO: handle migration
-                            }
-                        };
-                    }
-                }
-                None => println!("Error: impossible None result in step (1)"),
-            }
-        }
-
-        if PRINT_DEBUG {
-            match now.elapsed() {
-                Ok(elapsed) => {
-                    println!("{}", elapsed.as_millis());
-                }
-                Err(e) => {
-                    println!("Error in heartbeat() : now.elapsed has an error: {:?}", e);
-                }
-            }
-        }
-        return Ok(());
-    }
-}
-
-// BackendStatus is a struct that Keeper stores, recording each backend's addr and liveness
-#[derive(Debug, Clone)]
-pub struct BackendStatus {
-    back_addr: String, // addr of the backend
-    liveness: bool,    // whether this backend is alive or not
-}
-
-// ChordObject is an object stored on the ring of Chord
-pub struct ChordObject {
-    hash: u64, // hash = hash(addr)
-    addr: String,
-    prev: Box<ChordObject>,
-}
 
 /// this async function accepts a [KeeperConfig] that should be used to start
 /// a new keeper server on the address given in the config.
@@ -282,9 +98,32 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         .map(|x| "http://".to_string() + x)
         .collect();
 
-    // assign all backs to N keepers. Each back is randomly assigned to 3 keepers
-    let mut vec_keeper: Vec<KeeperClient> = Vec::new();
+    let keepers: Vec<String> = kc
+    .addrs
+    .clone()
+    .iter()
+    .map(|x| "http://".to_string() + x)
+    .collect();
 
+    // init this keeper
+    let keeper_addr = kc.addrs[kc.this].clone();
+    let mut this_keeper = KeeperServer {
+                keeper_addr: keeper_addr,
+                list_back_recover: Vec::new(),
+                list_back_clock: Vec::new(),
+            
+                prev_alive_keeper_addr: "".to_string(), // this should be updated
+                prev_alive_keeper_list_back: Vec::new(),
+            };
+
+    // set its backends_recover and backends_clock
+    this_keeper.init_back_recover_and_clock(backs.clone(), keepers.clone());
+
+    // set its previous keeper, no matter it is alive or not
+    let mut vec_keeper : Vec<KeeperServer> = Vec::new();
+
+    // sleep for a while before we first start heartbeat
+    
     // TODO: put keepers and backends to the chord ring
 
     // for addr in kc.addrs {
