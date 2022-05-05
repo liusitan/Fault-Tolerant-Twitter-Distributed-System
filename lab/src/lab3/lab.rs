@@ -3,7 +3,7 @@ use tribbler::{
 };
 
 // for binstorage
-use crate::lab3::{binstorage::BinStorageClient, binstorage::calculate_hash, client::StorageClient, front::FrontServer};
+use crate::lab2::{binstorage::BinStorageClient, binstorage::calculate_hash, client::StorageClient, front::FrontServer};
 use std::net::{SocketAddr, ToSocketAddrs};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
@@ -17,7 +17,6 @@ use std::time::{Duration, SystemTime};
 use std::thread::sleep;
 use tribbler::rpc;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
-
 const PRINT_DEBUG: bool = true;
 
 /// This function accepts a list of backend addresses, and returns a
