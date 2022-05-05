@@ -19,6 +19,8 @@ use tribbler::storage::List;
 use tribbler::storage::Pattern;
 use tribbler::storage::{KeyList, KeyString, Storage};
 
+use super::utility::cons_hash;
+
 #[derive(Debug)]
 pub struct VirBinStorageClient {
     pub backs: Vec<String>,
@@ -32,20 +34,16 @@ pub struct VirBinStorageClient {
 const addr1: &str = "A1";
 const addr2: &str = "A2";
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hash;
-use std::hash::Hasher;
-pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish();
-    todo!();
-}
 const SEPARATOR: &str = "|";
 
 impl VirBinStorageClient {
     pub async fn new(addrs: &Vec<String>, name: &str) -> TribResult<VirBinStorageClient> {
-        let hid = calculate_hash(&(name.to_string())) as usize;
+        let hashed_addrs: Vec<u64> = addrs.iter().map(|x| cons_hash(x)).collect();
+        let mut hid = hashed_addrs
+            .binary_search(&cons_hash(&name.to_string()))
+            .unwrap_or_else(|x| x % addrs.len());
+
+        // let hid = calculate_hash(&(name.to_string())) as usize;
         return Ok(VirBinStorageClient {
             backs: addrs.to_owned(),
             hashid: hid,
