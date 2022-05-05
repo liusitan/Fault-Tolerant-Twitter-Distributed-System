@@ -172,6 +172,7 @@ mod client;
 mod dumbkeeper;
 mod front;
 mod keeperserver;
+mod keeperserverinit;
 pub mod lab;
 mod server;
 pub mod utility;

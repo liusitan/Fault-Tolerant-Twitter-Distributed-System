@@ -5,8 +5,8 @@ use tribbler::{
 // for binstorage
 use super::{
     binstorage::BinStorageClient, client::StorageClient, front::FrontServer,
-    keeperserver::serve_my_keeper_rpc, keeperserver::KeeperServer,
-    keeperserver::KEEPER_INIT_DELAY_MS,
+    keeperserver::KeeperServer, keeperserverinit::serve_my_keeper_rpc,
+    keeperserverinit::KEEPER_INIT_DELAY_MS,
 };
 use std::net::{SocketAddr, ToSocketAddrs};
 use tokio::sync::mpsc::{Receiver, Sender};

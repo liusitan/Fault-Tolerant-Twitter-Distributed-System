@@ -85,6 +85,7 @@ async fn setup_keeper(
 
     let handle = spawn_keep(cfg);
     let ready = rx.recv_timeout(Duration::from_secs(5))?;
+    log::info!("Waiting for ready signal from keepers...");
     if !ready {
         return Err(Box::new(TribblerError::Unknown(
             "keeper failed to start".to_string(),
