@@ -1,7 +1,7 @@
+use super::utility::cons_hash;
 use crate::keeper::rpc_keeper_server_client::RpcKeeperServerClient;
 use crate::keeper::rpc_keeper_server_server::RpcKeeperServer;
 use crate::keeper::Null;
-use crate::lab3::binstorage::calculate_hash;
 use async_trait::async_trait;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
 use tribbler::rpc::{Key, KeyValue, Pattern};
@@ -583,10 +583,6 @@ pub const FAIL_TASK: &str = "fail";
 pub const REC_TASK: &str = "recover";
 pub const START_MSG: &str = "start";
 pub const END_MSG: &str = "end";
-
-fn cons_hash(val: &String) -> u64 {
-    calculate_hash(val)
-}
 
 #[async_trait]
 impl RpcKeeperServer for KeeperServer {

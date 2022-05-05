@@ -1,11 +1,10 @@
-use crate::lab2::client::StorageClient;
+use crate::lab1::client::StorageClient;
+use crate::lab2::virtualized_bin_client::VirBinStorageClient;
 use async_trait::async_trait;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use tribbler::err::TribResult;
 use tribbler::storage::{BinStorage, Storage};
-
-use super::virtualized_bin_client::VirBinStorageClient;
 
 pub struct BinStorageClient {
     pub list_back: Vec<String>,
@@ -24,13 +23,12 @@ impl BinStorage for BinStorageClient {
         let hash = calculate_hash(&name.clone()) as usize;
         let length = self.list_back.len();
         let index = hash % length;
-        let addr = self.list_back[index].clone();
+        // let addr = self.list_back[index].clone();
 
         // parameter `addr` is in the form of <host>:<port>, and it is always a valid TCP address
         // returned Storage is used as an interface
 
         let sc = VirBinStorageClient::new(&self.list_back, name).await?;
-
         return Ok(Box::new(sc));
     }
 }
