@@ -1,28 +1,21 @@
 use crate::lab1::client::StorageClient;
 use crate::lab2::virtualized_bin_client::VirBinStorageClient;
 use async_trait::async_trait;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+
 use tribbler::err::TribResult;
 use tribbler::storage::{BinStorage, Storage};
+
+use super::utility::calculate_hash;
 
 pub struct BinStorageClient {
     pub list_back: Vec<String>,
 }
 
 // the following function is from Rust's official example
-pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
-}
 
 #[async_trait]
 impl BinStorage for BinStorageClient {
     async fn bin(&self, name: &str) -> TribResult<Box<dyn Storage>> {
-        let hash = calculate_hash(&name.clone()) as usize;
-        let length = self.list_back.len();
-        let index = hash % length;
         // let addr = self.list_back[index].clone();
 
         // parameter `addr` is in the form of <host>:<port>, and it is always a valid TCP address
