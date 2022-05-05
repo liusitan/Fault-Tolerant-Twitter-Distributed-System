@@ -22,9 +22,9 @@ impl DumbKeeper {
     }
     async fn clock_update(&self) -> TribResult<()> {
         let mut c = 0;
-        let mut recent_failed_backs;
+        let mut recent_failed_backs = String::new();
         for ip in &self.cfg.backs {
-            let client1 = client::StorageClient::new(&("http://".to_string() + ip)).await;
+            let client1 = client::StorageClient::new(&("http://".to_string() + ip)).await?;
             match client1.clock(c).await {
                 Ok(x) => {
                     c = x;
@@ -36,15 +36,15 @@ impl DumbKeeper {
         }
 
         for ip in &self.cfg.backs {
-            let client1 = client::StorageClient::new(&("http://".to_string() + ip)).await;
+            let client1 = client::StorageClient::new(&("http://".to_string() + ip)).await?;
             client1.clock(c + 1).await?;
         }
-
-        todo!()
+        self.migrate(recent_failed_backs).await?;
+        return Ok(());
     }
     async fn mirgrate_from_x_to_y(&self, x: &str, y: &str) -> TribResult<()> {
-        let clientx = client::StorageClient::new(x).await;
-        let clienty = client::StorageClient::new(x).await;
+        let clientx = client::StorageClient::new(x).await?;
+        let clienty = client::StorageClient::new(x).await?;
         let keys = clientx
             .list_keys(&Pattern {
                 prefix: "".to_string(),
@@ -55,10 +55,12 @@ impl DumbKeeper {
         for key in &keys {
             let values = clientx.list_get(key).await?.0;
             for value in &values {
-                clienty.list_append(&KeyValue {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                });
+                clienty
+                    .list_append(&KeyValue {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                    })
+                    .await?;
             }
         }
         return Ok(());
@@ -101,8 +103,8 @@ impl DumbKeeper {
             i -= 1;
             i %= self.cfg.backs.len();
         }
-        self.mirgrate_from_x_to_y(middle, next);
-        self.mirgrate_from_x_to_y(prev, middle);
+        self.mirgrate_from_x_to_y(middle, next).await?;
+        self.mirgrate_from_x_to_y(prev, middle).await?;
         Ok(())
     }
 }
