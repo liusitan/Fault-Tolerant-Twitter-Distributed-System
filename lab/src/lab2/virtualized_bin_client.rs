@@ -39,20 +39,22 @@ const SEPARATOR: &str = "|";
 impl VirBinStorageClient {
     pub async fn new(addrs: &Vec<String>, name: &str) -> TribResult<VirBinStorageClient> {
         let hashed_addrs: Vec<u64> = addrs.iter().map(|x| cons_hash(x)).collect();
+        let mut my_addrs = addrs.clone();
+        my_addrs.sort_by_key(|x| cons_hash(x));
         let mut hid = hashed_addrs
             .binary_search(&cons_hash(&name.to_string()))
             .unwrap_or_else(|x| x % addrs.len());
 
         // let hid = calculate_hash(&(name.to_string())) as usize;
         return Ok(VirBinStorageClient {
-            backs: addrs.to_owned(),
+            backs: my_addrs.to_owned(),
             hashid: hid,
             user_name: name.to_owned(),
             client1: Arc::new(RwLock::new(Box::new(
-                client::StorageClient::new(&addrs[hid]).await?,
+                client::StorageClient::new(&my_addrs[hid]).await?,
             ))),
             client2: Arc::new(RwLock::new(Box::new(
-                client::StorageClient::new(&addrs[hid + 1]).await?,
+                client::StorageClient::new(&my_addrs[hid + 1]).await?,
             ))),
             clients_update_at: RwLock::new(time::Instant::now()),
         });
