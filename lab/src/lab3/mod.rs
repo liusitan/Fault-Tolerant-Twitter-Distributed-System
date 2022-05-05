@@ -168,3 +168,12 @@
 //!
 //! Happy Lab 3. :-)
 mod keeperserver;
+mod binstorage;
+mod client;
+mod front;
+mod lab;
+mod server;
+mod virtualized_bin_client;
+pub use crate::lab3::lab::new_bin_client;
+pub use crate::lab3::lab::new_front;
+pub use crate::lab3::lab::serve_keeper;
