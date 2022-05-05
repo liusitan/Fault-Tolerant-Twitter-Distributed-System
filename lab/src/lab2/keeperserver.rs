@@ -633,7 +633,10 @@ impl KeeperServer {
                 self.check_list_keys_in_order(list_keys_to_check).await;
             }
 
+            // upadte keeper states
             self.prev_keeper = pred_keeper.clone();
+            // self.backends.extend(&new_backends);
+            // todo: update other fields as well
         }
     }
 
