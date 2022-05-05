@@ -1,3 +1,7 @@
+use crate::keeper::rpc_keeper_server_client::RpcKeeperServerClient;
+use crate::keeper::rpc_keeper_server_server::RpcKeeperServer;
+use crate::keeper::Null;
+use async_trait::async_trait;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
 use tribbler::rpc::{Key, KeyValue, Pattern};
 
@@ -5,8 +9,11 @@ pub struct KeeperServer {
     pub keeper_addr: String,
     pub backends: Vec<String>,
     pub hashed_backends: Vec<i32>,
+    pub hashed_keepers: Vec<i32>,
+    pub keepers: Vec<String>,
     pub assigned: Vec<String>,
     pub liveliness: Vec<bool>,
+    pub prev_keeper: String,
 }
 
 pub const MIGRATE_TASK_LOG: &str = "migrate_task_log";
@@ -20,7 +27,141 @@ fn cons_hash(val: &String) -> i32 {
     todo!();
 }
 
+#[async_trait]
+impl RpcKeeperServer for KeeperServer {
+    async fn dumb(
+        &self,
+        request: tonic::Request<Null>,
+    ) -> Result<tonic::Response<Null>, tonic::Status> {
+        return Ok(tonic::Response::new(Null {}));
+    }
+}
+
 impl KeeperServer {
+    async fn check_prev_keeper(&mut self) {
+        let conn = RpcKeeperServerClient::connect(self.prev_keeper.clone()).await;
+        if !conn.is_ok() {
+            // previous keeper is dead
+            let pred_keeper = self.find_predecessor_keeper(&self.prev_keeper).await;
+            // get the new backends
+            let mut new_backends = Vec::new();
+            let mut new_ext_backends = Vec::new();
+            let mut insert_pos = self
+                .hashed_backends
+                .binary_search(&cons_hash(&pred_keeper))
+                .unwrap_or_else(|x| (x - 1) % self.hashed_backends.len());
+            new_ext_backends.push(self.backends[insert_pos].clone());
+            insert_pos = (1 + insert_pos) % self.hashed_backends.len();
+
+            let mut end_pos = self
+                .hashed_backends
+                .binary_search(&cons_hash(&self.prev_keeper))
+                .unwrap_or_else(|x| (x - 1) % self.hashed_backends.len());
+            end_pos = (1 + end_pos) % self.hashed_backends.len();
+            while insert_pos != end_pos {
+                new_backends.push(self.backends[insert_pos].clone());
+                insert_pos = (1 + insert_pos) % self.hashed_backends.len();
+            }
+            new_ext_backends.extend(new_backends);
+            new_ext_backends.push(self.backends[insert_pos].clone());
+
+            // check previous migration and join log
+            let log_check_pass = self.check_prev_keeper_log().await;
+
+            // check keys on one server is present on another one, if not
+            if log_check_pass {
+                let (string_keys_to_check, list_keys_to_check) =
+                    self.get_backends_keys(new_ext_backends).await;
+                self.check_string_keys_in_order(string_keys_to_check).await;
+                self.check_list_keys_in_order(list_keys_to_check).await;
+            }
+
+            self.prev_keeper = pred_keeper.clone();
+        }
+    }
+
+    async fn check_prev_keeper_log(&self) -> bool {
+        // check migration log
+        let log_entry_key = format!("{}:{}", KEEPER_LOG, self.prev_keeper);
+        let log_entry_val = self.get_list_val(&log_entry_key).await;
+
+        if !log_entry_val.is_empty() {
+            let last_log = &log_entry_val[log_entry_val.len() - 1];
+            let fields: Vec<&str> = last_log.as_str().split(":").collect();
+            let is_fail_task = fields[0].to_string().eq(&FAIL_TASK.to_string());
+            let failed_srv = fields[1].to_string();
+            if last_log.ends_with(START_MSG) {
+                // failed in the middle of a migration or join
+                if is_fail_task {
+                    self.migrate(&failed_srv).await;
+                } else {
+                    self.join(&failed_srv).await;
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+
+    async fn get_backends_keys(&self, new_ext_backends: Vec<String>) -> (Vec<String>, Vec<String>) {
+        let mut string_keys = Vec::new();
+        let mut list_keys = Vec::new();
+        for backend in new_ext_backends {
+            let conn = TribStorageClient::connect(backend.clone()).await;
+            if conn.is_ok() {
+                string_keys.extend(self.get_keys(&backend).await);
+                list_keys.extend(self.get_list_keys(&backend).await);
+            }
+        }
+        return (string_keys, list_keys);
+    }
+
+    async fn check_list_keys_in_order(&self, keys: Vec<String>) {
+        for key in keys {
+            let mut idx = self
+                .hashed_backends
+                .binary_search(&cons_hash(&key))
+                .unwrap_or_else(|x| x);
+            let pidx = self.get_primary_backend(idx, &key).await;
+            let primary_srv = &self.backends[pidx];
+            let mut insert_idx = self
+                .hashed_backends
+                .binary_search(&cons_hash(&key))
+                .unwrap_or_else(|x| x);
+            insert_idx = (insert_idx - 1) % self.backends.len();
+            let should_primary_idx = self.get_next_living_backend(insert_idx).await;
+            if should_primary_idx != pidx {
+                // move
+                let val = self.get_key_list_value(primary_srv, &key).await;
+                self.migrate_list_keyval(&key, val, &self.backends[should_primary_idx])
+                    .await;
+            }
+        }
+    }
+
+    async fn check_string_keys_in_order(&self, keys: Vec<String>) {
+        for key in keys {
+            let mut idx = self
+                .hashed_backends
+                .binary_search(&cons_hash(&key))
+                .unwrap_or_else(|x| x);
+            let pidx = self.get_primary_backend(idx, &key).await;
+            let primary_srv = &self.backends[pidx];
+            let mut insert_idx = self
+                .hashed_backends
+                .binary_search(&cons_hash(&key))
+                .unwrap_or_else(|x| x);
+            insert_idx = (insert_idx - 1) % self.backends.len();
+            let should_primary_idx = self.get_next_living_backend(insert_idx).await;
+            if should_primary_idx != pidx {
+                // move
+                let val = self.get_key_string_value(primary_srv, &key).await;
+                self.migrate_string_keyval(&key, &val.unwrap(), &self.backends[should_primary_idx])
+                    .await;
+            }
+        }
+    }
+
     async fn check_liveliness(&self, backend: &String) -> bool {
         let conn = TribStorageClient::connect(backend.clone()).await;
         if !conn.is_ok() {
@@ -49,6 +190,27 @@ impl KeeperServer {
             }
             idx = (idx + 1) % self.backends.len();
         }
+    }
+
+    async fn get_list_val(&self, key: &String) -> Vec<String> {
+        let mut idx = self
+            .hashed_backends
+            .binary_search(&cons_hash(key))
+            .unwrap_or_else(|x| x);
+        for _ in 0..self.backends.len() {
+            let backend = &self.backends[idx];
+            let conn = TribStorageClient::connect(backend.clone()).await;
+            if conn.is_ok() {
+                let mut client = conn.unwrap();
+
+                let list_key_resp = client.list_get(Key { key: key.clone() }).await;
+                if list_key_resp.is_ok() {
+                    return list_key_resp.unwrap().into_inner().list;
+                }
+            }
+            idx = (idx + 1) % self.backends.len();
+        }
+        return Vec::new();
     }
 
     async fn is_failed_backend_primary(&self, mut insert_idx: usize, failed_idx: usize) -> bool {
@@ -99,7 +261,41 @@ impl KeeperServer {
         }
     }
 
-    async fn find_predecessor(&self, failed_backend: &String) -> String {
+    async fn find_predecessor_keeper(&self, failed_keeper: &String) -> String {
+        // binary search
+        let mut srv_idx = self
+            .hashed_keepers
+            .binary_search(&cons_hash(failed_keeper))
+            .unwrap_or_else(|x| x % self.hashed_keepers.len());
+        srv_idx = (srv_idx - 1) % self.keepers.len();
+        loop {
+            let keeper = &self.keepers[srv_idx];
+            let conn = TribStorageClient::connect(keeper.clone()).await;
+            if conn.is_ok() {
+                return keeper.clone();
+            }
+            srv_idx = (srv_idx - 1) % self.keepers.len();
+        }
+    }
+
+    async fn find_successor_keeper(&self, failed_keeper: &String) -> String {
+        // binary search
+        let mut srv_idx = self
+            .hashed_keepers
+            .binary_search(&cons_hash(failed_keeper))
+            .unwrap_or_else(|x| x % self.hashed_keepers.len());
+        srv_idx = (srv_idx + 1) % self.keepers.len();
+        loop {
+            let keeper = &self.keepers[srv_idx];
+            let conn = TribStorageClient::connect(keeper.clone()).await;
+            if conn.is_ok() {
+                return keeper.clone();
+            }
+            srv_idx = (srv_idx + 1) % self.keepers.len();
+        }
+    }
+
+    async fn find_predecessor_backend(&self, failed_backend: &String) -> String {
         // binary search
         let mut srv_idx = self
             .hashed_backends
@@ -116,7 +312,7 @@ impl KeeperServer {
         }
     }
 
-    async fn find_succesor(&self, failed_backend: &String) -> String {
+    async fn find_succesor_backend(&self, failed_backend: &String) -> String {
         // binary search
         let mut srv_idx = self
             .hashed_backends
@@ -299,8 +495,8 @@ impl KeeperServer {
         // use write-ahead log to tolerate keeper fault
         self.start_migration(failed_backend).await;
 
-        let prev_srv = self.find_predecessor(failed_backend).await;
-        let next_srv = self.find_succesor(failed_backend).await;
+        let prev_srv = self.find_predecessor_backend(failed_backend).await;
+        let next_srv = self.find_succesor_backend(failed_backend).await;
 
         // get the keys from prev_srv and next_srv
         let mut string_keys_prev_srv = Vec::new();
@@ -407,8 +603,8 @@ impl KeeperServer {
         // use write-ahead log to tolerate keeper fault
         self.start_recover(recover_backend).await;
 
-        let prev_srv = self.find_predecessor(recover_backend).await;
-        let next_srv = self.find_succesor(recover_backend).await;
+        let prev_srv = self.find_predecessor_backend(recover_backend).await;
+        let next_srv = self.find_succesor_backend(recover_backend).await;
 
         // get the keys from prev_srv and next_srv
         let mut string_keys_prev_srv = Vec::new();

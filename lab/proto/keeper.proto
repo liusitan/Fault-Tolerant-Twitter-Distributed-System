@@ -5,9 +5,9 @@ syntax = "proto3";
 package keeper;
 
 // Add your message and service definitions below this line
-message Bool {
-    bool value = 1;
+message Null {
 }
 
-service KeeperServer {
+service RPCKeeperServer {
+    rpc dumb(Null) returns (Null);
 }
