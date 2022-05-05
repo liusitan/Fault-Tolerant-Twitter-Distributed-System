@@ -1,5 +1,4 @@
 use crate::lab2::client::StorageClient;
-use crate::lab2::virtualized_bin_client::VirBinStorageClient;
 use async_trait::async_trait;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

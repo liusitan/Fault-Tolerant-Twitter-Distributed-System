@@ -23,14 +23,12 @@ impl BinStorage for BinStorageClient {
         let hash = calculate_hash(&name.clone()) as usize;
         let length = self.list_back.len();
         let index = hash % length;
-        let addr = self.list_back[index].clone();
+        // let addr = self.list_back[index].clone();
 
         // parameter `addr` is in the form of <host>:<port>, and it is always a valid TCP address
         // returned Storage is used as an interface
 
-        let sc = <VirBinStorageClient as super::virtualized_bin_client::Newhack>::neww(&addr, name)
-            .await;
-
+        let sc = VirBinStorageClient::new(&self.list_back, name).await?;
         return Ok(Box::new(sc));
     }
 }
