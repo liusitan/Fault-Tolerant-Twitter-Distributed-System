@@ -3,7 +3,11 @@ use tribbler::{
 };
 
 // for binstorage
-use crate::lab3::{binstorage::BinStorageClient, binstorage::calculate_hash, client::StorageClient, front::FrontServer, keeperserver::KeeperServer};
+use crate::lab3::{
+    binstorage::BinStorageClient, client::StorageClient, front::FrontServer,
+    keeperserver::serve_my_keeper_rpc, keeperserver::KeeperServer,
+    keeperserver::KEEPER_INIT_DELAY_MS,
+};
 use std::net::{SocketAddr, ToSocketAddrs};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
@@ -33,7 +37,6 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
     return Ok(Box::new(bs));
 }
 
-
 /// this async function accepts a [KeeperConfig] that should be used to start
 /// a new keeper server on the address given in the config.
 ///
@@ -42,7 +45,7 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
 /// started.
 #[allow(unused_variables)]
 pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
-    let addr = match kc.addrs[0].to_socket_addrs() {
+    let addr = match kc.addrs[kc.this].to_socket_addrs() {
         Ok(mut iterator) => match iterator.next() {
             Some(first_addr) => first_addr,
             None => {
@@ -79,18 +82,6 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         }
     };
 
-    match kc.ready {
-        Some(send) => {
-            let send_result = send.send(true);
-            match send_result {
-                Ok(()) => (),
-                Err(e) => (),
-            }
-        }
-        None => (),
-    }
-
-    let mut dida = tokio::time::interval(time::Duration::from_secs(1)); // keeper syncs the clock of backends every 1000ms
     let backs: Vec<String> = kc
         .backs
         .clone()
@@ -99,74 +90,58 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         .collect();
 
     let keepers: Vec<String> = kc
-    .addrs
-    .clone()
-    .iter()
-    .map(|x| "http://".to_string() + x)
-    .collect();
+        .addrs
+        .clone()
+        .iter()
+        .map(|x| "http://".to_string() + x)
+        .collect();
 
     // init this keeper
     let keeper_addr = kc.addrs[kc.this].clone();
     let mut this_keeper = KeeperServer {
-                keeper_addr: keeper_addr,
-                list_back_recover: Vec::new(),
-                list_back_clock: Vec::new(),
-            
-                prev_alive_keeper_addr: "".to_string(), // this should be updated
-                prev_alive_keeper_list_back: Vec::new(),
-            };
+        keeper_addr: keeper_addr,    //inited
+        backends: Vec::new(),        //inited
+        hashed_backends: Vec::new(), //inited
+        keepers: Vec::new(),         //inited
+        hashed_keepers: Vec::new(),  //inited
 
-    // set its backends_recover and backends_clock
+        list_back_recover: Vec::new(),   //inited
+        list_back_clock: Vec::new(),     //inited
+        list_all_back_chord: Vec::new(), //inited
+
+        prev_keeper: "".to_string(),             //inited
+        prev_alive_keeper_list_back: Vec::new(), // TODO: do we still need this?
+    };
+
+    // TODO: what if this keeper is restarted?
+
+    // init its backends_recover and backends_clock
     this_keeper.init_back_recover_and_clock(backs.clone(), keepers.clone());
 
-    // set its previous keeper, no matter it is alive or not
-    let mut vec_keeper : Vec<KeeperServer> = Vec::new();
+    // init prev_keeper, doesn't care whether the previous keeper is alive or not
+    this_keeper.init_prev_keeper();
+
+    // init RPCKeeperServer
+    // This thread will send ready signal
+    let (stop_rpc, mut stop_sign): (oneshot::Sender<()>, _) = oneshot::channel();
+    tokio::spawn(serve_my_keeper_rpc(addr.clone(), kc.ready, stop_sign));
 
     // sleep for a while before we first start heartbeat
-    
-    // TODO: put keepers and backends to the chord ring
+    // TODO: can we find a better way than this to solve the problem of uninitialized keepers?
+    sleep(Duration::from_millis(KEEPER_INIT_DELAY_MS));
 
-    // for addr in kc.addrs {
-    //     vec_keeper.push(KeeperClient {
-    //         keeper_addr: addr.clone(),
-    //         list_back_recover: Vec::new(),
-    //         list_back_clock: Vec::new(),
-
-    //         prev_alive_keeper_addr: "".to_string(), // this should be updated
-    //         prev_alive_keeper_list_back: Vec::new(),
-    //     })
-    // }
-    // let N = vec_keeper.len();
-    // let mut rng = rand::thread_rng();
-    // for back in kc.backs {
-    //     let mut vec_index_keeper : Vec<usize> = Vec::new();
-    //     while vec_index_keeper.len() < 3 {
-    //         let index_keeper = rng.gen_range(0..N);
-    //         match vec_index_keeper.into_iter().find(| &x| x == index_keeper) {
-    //             None => vec_index_keeper.push(index_keeper),
-    //             Some(_) => {},
-    //         }
-    //     }
-    //     for i in vec_index_keeper {
-    //         vec_keeper[i].backs.push(back.clone());
-    //     }
-    // }
-
-    // // creates N threads, each thread for a keeper. It syncs the clock of the backs it is in charge of
-    // for keeper in vec_keeper {
-    //     let mut interval = time::interval(time::Duration::from_millis(800)); // keeper syncs the clock of backends every 800ms
-    //     tokio::spawn(async move {
-    //         interval.tick().await;
-    //         keeper.Sync_clock().await;
-    //     });
-    // }
+    // start the loop of heartbeat
+    let mut dida = tokio::time::interval(time::Duration::from_secs(1)); // keeper syncs the clock of backends every 1000ms
     match kc.shutdown {
         Some(mut recv) => loop {
             tokio::select! {
                 _ = dida.tick() => {
-                // sync_backs_clock(backs.clone()).await;
+                    this_keeper.heart_beat().await;
                 }
                 _ = recv.recv() => {
+                    if let Err(_) = stop_rpc.send(()) {
+                        println!("Error during shutdown keeper: send failed");
+                    }
                     break;
                 }
             }
@@ -175,7 +150,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         None => loop {
             tokio::select! {
                 _ = dida.tick() => {
-                    // sync_backs_clock(backs.clone()).await;
+                    this_keeper.heart_beat().await;
                 }
             }
         },

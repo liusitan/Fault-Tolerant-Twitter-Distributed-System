@@ -15,13 +15,13 @@ use tribbler::rpc::trib_storage_server as rs;
 use tribbler::storage::Storage;
 
 // for keeper
+use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::thread::sleep;
 use std::time::{Duration, SystemTime};
 use tokio::time;
 use tribbler::rpc;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
-use std::cmp::Ordering;
-use std::cell::RefCell;
 
 const PRINT_DEBUG: bool = true;
 
@@ -53,100 +53,24 @@ pub struct KeeperClient {
 }
 
 fn main() {
-    let list_all_back = vec!["123".to_string(),"456".to_string(),"789".to_string()];
-    let list_all_keep = vec!["ab".to_string(),"cde".to_string(),"fg".to_string()];
-    // put all backs and keepers to a list as ChordObject
-    let mut list_chord_object :Vec<RefCell<ChordObject>> =Vec::new();
-
-    for back in list_all_back {
-        let o = ChordObject {
-            hash: calculate_hash(&back.clone()), // hash = hash(addr)
-            addr: back,
-            prev: address::Nil,
-        };
-        list_chord_object.push(RefCell::new(o));
-    }
-
-
-    for keeper in list_all_keep {
-        let o = ChordObject {
-            hash: calculate_hash(&keeper.clone()), // hash = hash(addr)
-            addr: keeper,
-            prev: address::Nil,
-        };
-        list_chord_object.push(RefCell::new(o));
-    }
-
-    list_chord_object.sort();
-
-    let mut prev_obj = address::Nil;
-    {
-        for i in 0..list_chord_object.len() {
-            let mut o = list_chord_object[i].clone();
-            o.borrow_mut().prev = prev_obj;
-            prev_obj = address::address(Box::new(list_chord_object[i].clone()));
-        }
-        list_chord_object[0].clone().borrow_mut().prev = prev_obj;
-    }
-    
-
-    println!("Loop1: length is {}", list_chord_object.len());
-    for i in 0..list_chord_object.len() {
-        match list_chord_object[i].clone().borrow_mut().prev {
-            address::address(ref mut next_address) => {
-                println!("\tobj hash: {}, obj addr: {}, prev_obj: {}", list_chord_object[i].clone().borrow_mut().hash, 
-        list_chord_object[i].clone().borrow_mut().addr, next_address.into_inner().hash);
-            }
-            address::Nil => {
-                println!("\tobj hash: {}, obj addr: {}, prev_obj: Nil", list_chord_object[i].clone().borrow_mut().hash, 
-        list_chord_object[i].clone().borrow_mut().addr);
-            }
-        }
-    }
-
-    for i in 0..list_chord_object.len() {
-        list_chord_object[i].clone().borrow_mut().addr = list_chord_object[i].clone().borrow_mut().addr.clone() + "ahaha";
-    }
-    
-    println!("Loop2: length is {}", list_chord_object.len());
-    for i in 0..list_chord_object.len() {
-        println!("\tobj hash: {}, obj addr: {}", list_chord_object[i].clone().borrow_mut().hash, list_chord_object[i].clone().borrow_mut().addr);
+    let list_keeper = vec![10];
+    let list_back = vec![0, 5, 7, 13, 100];
+    for back in list_back.clone() {
+        let index_keeper = list_keeper
+            .binary_search(&back)
+            .unwrap_or_else(|x| x % list_back.len());
+        println!("\tbackend: {}, keeper: {}", back, index_keeper);
     }
 }
 
 impl KeeperClient {
     // given all backends' addr, use hash to compute which backends should be put into list_back_recover and list_back_clock
-    fn init_back_recover_and_clock(&mut self, list_all_back: Vec<String>, list_all_keep: Vec<String>) {
-        // put all backs and keepers to a list as ChordObject
-        let mut list_chord_object : Vec<RefCell<ChordObject>> = Vec::new();
-
-        for back in list_all_back {
-            let o = ChordObject {
-                hash: calculate_hash(&back.clone()), // hash = hash(addr)
-                addr: back,
-                prev: address::Nil,
-            };
-            list_chord_object.push(RefCell::new(o));
-        }
-
-        for keeper in list_all_keep {
-            let o = ChordObject {
-                hash: calculate_hash(&keeper.clone()), // hash = hash(addr)
-                addr: keeper,
-                prev: address::Nil,
-            };
-            list_chord_object.push(RefCell::new(o));
-        }
-
-        list_chord_object.sort();
-
-        let mut prev_obj = address::Nil;
-        for obj in list_chord_object {
-            obj.borrow_mut().prev = prev_obj;
-            prev_obj = address::address(Box::new(obj));
-        }
-        list_chord_object[0].borrow_mut().prev = prev_obj;
-
+    fn init_back_recover_and_clock(
+        &mut self,
+        list_all_back: Vec<String>,
+        list_all_keep: Vec<String>,
+    ) {
+        todo!();
     }
 
     fn add_back_recover(&mut self, back: String) {
@@ -408,38 +332,32 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         .map(|x| "http://".to_string() + x)
         .collect();
 
-<<<<<<< HEAD
-    // assign all backs to N keepers. Each back is randomly assigned to 3 keepers
-    let mut vec_keeper: Vec<KeeperClient> = Vec::new();
-
-=======
     let keepers: Vec<String> = kc
-    .addrs
-    .clone()
-    .iter()
-    .map(|x| "http://".to_string() + x)
-    .collect();
+        .addrs
+        .clone()
+        .iter()
+        .map(|x| "http://".to_string() + x)
+        .collect();
 
     // init this keeper
     let keeper_addr = kc.addrs[kc.this].clone();
     let mut this_keeper = KeeperClient {
-                keeper_addr: keeper_addr,
-                list_back_recover: Vec::new(),
-                list_back_clock: Vec::new(),
-            
-                prev_alive_keeper_addr: "".to_string(), // this should be updated
-                prev_alive_keeper_list_back: Vec::new(),
-            };
+        keeper_addr: keeper_addr,
+        list_back_recover: Vec::new(),
+        list_back_clock: Vec::new(),
+
+        prev_alive_keeper_addr: "".to_string(), // this should be updated
+        prev_alive_keeper_list_back: Vec::new(),
+    };
 
     // set its backends_recover and backends_clock
     this_keeper.init_back_recover_and_clock(backs.clone(), keepers.clone());
 
     // set its previous keeper, no matter it is alive or not
-    let mut vec_keeper : Vec<KeeperClient> = Vec::new();
+    let mut vec_keeper: Vec<KeeperClient> = Vec::new();
 
     // sleep for a while before we first start heartbeat
-    
->>>>>>> ae4207b688b8f7c5a3204cf3e00bbe4e3da20d14
+
     // TODO: put keepers and backends to the chord ring
 
     // for addr in kc.addrs {
