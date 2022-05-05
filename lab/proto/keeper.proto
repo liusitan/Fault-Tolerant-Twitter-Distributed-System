@@ -5,3 +5,9 @@ syntax = "proto3";
 package keeper;
 
 // Add your message and service definitions below this line
+message Null {
+}
+
+service RPCKeeperServer {
+    rpc dumb(Null) returns (Null);
+}

@@ -167,5 +167,14 @@
 //! if they feel the need.
 //!
 //! Happy Lab 3. :-)
+mod binstorage;
+mod client;
 mod dumbkeeper;
+mod front;
+mod keeperserver;
 mod lab;
+mod server;
+mod virtualized_bin_client;
+pub use crate::lab3::lab::new_bin_client;
+pub use crate::lab3::lab::new_front;
+pub use crate::lab3::lab::serve_keeper;
