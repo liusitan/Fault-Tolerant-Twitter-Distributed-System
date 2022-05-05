@@ -30,6 +30,40 @@ pub struct KeeperServer {
 }
 
 impl KeeperServer {
+    // given all backends' addr, use hash to compute which backends should be put into list_back_recover and list_back_clock
+    fn init_back_recover_and_clock(&mut self, list_all_back: Vec<String>, list_all_keep: Vec<String>) {
+        // // put all backs and keepers to a list as ChordObject
+        // let mut list_chord_object : Vec<RefCell<ChordObject>> = Vec::new();
+
+        // for back in list_all_back {
+        //     let o = ChordObject {
+        //         hash: calculate_hash(&back.clone()), // hash = hash(addr)
+        //         addr: back,
+        //         prev: address::Nil,
+        //     };
+        //     list_chord_object.push(RefCell::new(o));
+        // }
+
+        // for keeper in list_all_keep {
+        //     let o = ChordObject {
+        //         hash: calculate_hash(&keeper.clone()), // hash = hash(addr)
+        //         addr: keeper,
+        //         prev: address::Nil,
+        //     };
+        //     list_chord_object.push(RefCell::new(o));
+        // }
+
+        // list_chord_object.sort();
+
+        // let mut prev_obj = address::Nil;
+        // for obj in list_chord_object {
+        //     obj.borrow_mut().prev = prev_obj;
+        //     prev_obj = address::address(Box::new(obj));
+        // }
+        // list_chord_object[0].borrow_mut().prev = prev_obj;
+
+    }
+
     fn add_back_recover(&mut self, back: String) {
         self.list_back_recover.push(BackendStatus {
             back_addr: back,
@@ -40,7 +74,7 @@ impl KeeperServer {
     fn add_back_clock(&mut self, back: String) {
         self.list_back_clock.push(BackendStatus {
             back_addr: back,
-            liveness: true, // TODO: check if this is true or false
+            liveness: true,
         });
     }
 
