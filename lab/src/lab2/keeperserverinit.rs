@@ -233,14 +233,16 @@ impl KeeperServer {
         // Example: responsible for [3,4,5,6], all backends [0,1,2,3,4,5,6,7,8] will have 2 and 7
         //                          [5,6,7,8], all backends [0,..,8] will have 4 and 0
         //                          [0,1,2,8], all backends [0,..,8] will have 7 and 3
-        let (mut l, mut r) = find_lr(list_recover_back_index.clone());
-        let len = list_all_back_hash.len();
+        let (l_, r_) = find_lr(list_recover_back_index.clone());
+        let len = list_all_back_hash.len() as i32;
+        let mut l = l_ as i32;
+        let mut r = r_ as i32;
         l = (l - 1 + len) % len;
         r = (r + 1) % len;
 
         // if append l and r to list, sort list, and remove duplicate
-        list_recover_back_index.push(l);
-        list_recover_back_index.push(r);
+        list_recover_back_index.push(l as usize);
+        list_recover_back_index.push(r as usize);
         list_recover_back_index.sort();
         list_recover_back_index.dedup();
 
@@ -257,9 +259,10 @@ impl KeeperServer {
         let index_self = self
             .keepers
             .binary_search(&self.keeper_addr.clone())
-            .unwrap_or_else(|x| x % keepers_len);
-        let index_prev = (index_self - 1 + keepers_len) % keepers_len;
-        self.prev_keeper = self.keepers.clone()[index_prev].clone();
+            .unwrap_or_else(|x| x % keepers_len) as i32;
+        let len = keepers_len as i32;
+        let index_prev = (index_self - 1 + len) % len;
+        self.prev_keeper = self.keepers.clone()[index_prev as usize].clone();
     }
 
     // when any keeper between self and self.prev_keeper becomes alive, update backends, hashed_backends, list_back_recover, list_back_clock, prev_keeper, prev_alive_keeper_list_back
