@@ -733,9 +733,10 @@ impl KeeperServer {
                     addr: "".to_string(),
                 })
                 .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+            let living_idx = self.get_next_living_backend(insert_idx).await;
             let primary_idx = self.get_primary_backend(insert_idx, string_key).await;
             let primary_srv = &self.list_all_back_chord[primary_idx].addr;
-            if primary_idx == recover_idx {
+            if living_idx == recover_idx {
                 // data should be moved from succ srv to recover srv
                 let val = self.get_key_string_value(primary_srv, string_key).await;
                 self.migrate_string_keyval(string_key, &val.unwrap(), recover_backend)
@@ -754,7 +755,8 @@ impl KeeperServer {
                 .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, list_key).await;
             let primary_srv = &self.list_all_back_chord[primary_idx].addr;
-            if primary_idx == recover_idx {
+            let living_idx = self.get_next_living_backend(insert_idx).await;
+            if living_idx == recover_idx {
                 // data should be moved from succ srv to recover srv
                 let val = self.get_key_list_value(primary_srv, list_key).await;
                 self.migrate_list_keyval(list_key, val, recover_backend)
@@ -774,7 +776,6 @@ impl KeeperServer {
                 })
                 .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, string_key).await;
-
             let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_srv.eq(&prev_srv) {
                 // recovered srv should store one copy
@@ -794,7 +795,6 @@ impl KeeperServer {
                 })
                 .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, list_key).await;
-
             let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_srv.eq(&prev_srv) {
                 // recovered srv should store one copy
