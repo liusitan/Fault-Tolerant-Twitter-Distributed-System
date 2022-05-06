@@ -1,5 +1,7 @@
+use std::{thread, time};
+
 use crate::lab1::client::StorageClient;
-use crate::lab2::virtualized_bin_client::VirBinStorageClient;
+use crate::lab2::dumb_vbc::VirBinStorageClient;
 use async_trait::async_trait;
 
 use tribbler::err::TribResult;
@@ -22,6 +24,7 @@ impl BinStorage for BinStorageClient {
         // returned Storage is used as an interface
 
         let sc = VirBinStorageClient::new(&self.list_back, name).await?;
+
         return Ok(Box::new(sc));
     }
 }

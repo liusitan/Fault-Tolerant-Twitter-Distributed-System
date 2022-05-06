@@ -61,13 +61,13 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
         // println!("server_back 34");
         if !config.ready.is_none() {
             let sender = config.ready.unwrap();
-            // println!("Sending true");
+            println!("Sending true");
 
             sender.send(true);
             // println!("Sent true");
         };
 
-        res.await;
+        res.await?;
     } else {
         let res = Server::builder()
             .add_service(rpc::trib_storage_server::TribStorageServer::new(
@@ -77,10 +77,11 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
 
         if !config.ready.is_none() {
             let sender = config.ready.unwrap();
+            println!("Sending true");
 
             sender.send(true);
         };
-        res.await;
+        res.await?;
     }
     // if res.is_err() {
     //     if !config.ready.is_none() {

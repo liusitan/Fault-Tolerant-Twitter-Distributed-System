@@ -32,6 +32,8 @@ impl StorageClient {
 #[async_trait] // VERY IMPORTANT !!
 impl Storage for StorageClient {
     async fn clock(&self, at_least: u64) -> TribResult<u64> {
+        println!("ip:{} {:?}", self.addr, at_least);
+
         let channel_clone = self.channel.clone();
         let mut client = TribStorageClient::new(channel_clone);
         let r = client
@@ -97,7 +99,7 @@ impl KeyString for StorageClient {
 #[async_trait] // VERY IMPORTANT !!
 impl KeyList for StorageClient {
     async fn list_get(&self, key: &str) -> TribResult<List> {
-        println!("{:?}", key);
+        println!("ip:{} {:?}", self.addr, key);
         let channel_clone = self.channel.clone();
         let mut client = TribStorageClient::new(channel_clone);
         let r = client
@@ -111,6 +113,7 @@ impl KeyList for StorageClient {
     }
     /// Append a string to the list. return true when no error.
     async fn list_append(&self, kv: &KeyValue) -> TribResult<bool> {
+        println!("ip::{} {:?}", self.addr, kv);
         let channel_clone = self.channel.clone();
         let mut client = TribStorageClient::new(channel_clone);
         let r = client
