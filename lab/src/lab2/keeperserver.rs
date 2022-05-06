@@ -4,6 +4,7 @@ use crate::keeper::rpc_keeper_server_client::RpcKeeperServerClient;
 use crate::keeper::rpc_keeper_server_server::RpcKeeperServer;
 use crate::keeper::Null;
 use async_trait::async_trait;
+use std::time::{Duration, SystemTime};
 use tribbler::rpc::trib_storage_client::TribStorageClient;
 use tribbler::rpc::{Key, KeyValue, Pattern};
 
@@ -14,14 +15,12 @@ pub struct KeeperServer {
     pub prev_keeper: String,
 
     // Begin of Ziheng's code
-
-    // TODO: check with Qizeng whether backends are backends this keeper is responsible for (controls migrate and join), but keepers are all keepers
-    // TODO: check with Qizeng whether backends.len() is 0 will matter
     pub list_back_recover: Vec<BackendStatus>, // Same as backends // list of backends that this keeper is responsible for (controls migrate and join)
     pub list_back_clock: Vec<String>, // list of backends that this keeper needs to sync the clock for. This list extends list_back_recover by 1 backend on left and right
     pub list_all_back_chord: Vec<ChordObject>, // list of all backends, no matter they are alive or not, no matter this keeper is responsible for or not
     pub prev_alive_keeper_list_back: Vec<BackendStatus>, // list of backends that previous keeper is responsible for
-                                                         // this keeper will check their liveness every 10 seconds
+    // this keeper will check their liveness every 10 seconds
+    pub debug_timer: SystemTime,
 }
 
 pub const MIGRATE_TASK_LOG: &str = "migrate_task_log";
@@ -62,6 +61,13 @@ impl KeeperServer {
         let conn = RpcKeeperServerClient::connect(self.prev_keeper.clone()).await;
         if !conn.is_ok() {
             // previous keeper is dead
+            if true {
+                println!(
+                    "----Handle death of prev_keeper {}\t in keeper {}",
+                    self.prev_keeper.clone(),
+                    self.keeper_addr.clone()
+                );
+            }
             let pred_keeper = self.find_predecessor_keeper(&self.prev_keeper).await;
             // get the new backends
             let mut new_backends = Vec::new();

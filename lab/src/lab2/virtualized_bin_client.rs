@@ -54,7 +54,7 @@ impl VirBinStorageClient {
                 client::StorageClient::new(&my_addrs[hid]).await?,
             ))),
             client2: Arc::new(RwLock::new(Box::new(
-                client::StorageClient::new(&my_addrs[hid + 1]).await?,
+                client::StorageClient::new(&my_addrs[(hid + 1) % my_addrs.len()]).await?,
             ))),
             clients_update_at: RwLock::new(time::Instant::now()),
         });
@@ -85,6 +85,7 @@ impl VirBinStorageClient {
                 }
                 Err(_) => {
                     id = id + 1;
+                    id %= self.backs.len();
                     continue;
                 }
             }
@@ -103,6 +104,7 @@ impl VirBinStorageClient {
                 }
                 Err(_) => {
                     id = id + 1;
+                    id %= self.backs.len();
                     continue;
                 }
             }

@@ -17,7 +17,8 @@ use tribbler::err::TribResult;
 use tribbler::rpc;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
 
-const PRINT_DEBUG: bool = true;
+pub const PRINT_DEBUG: bool = true;
+pub const PRINT_STATUS: bool = true;
 const CLOCK_TIMEOUT_MS: u64 = 300; // when a backend failed to connect, we sleep for CLOCK_TIMEOUT_MS ms, and give it one chance
 pub const KEEPER_INIT_DELAY_MS: u64 = 500; // when a keeper is initialized, sleep for KEEPER_INIT_DELAY_MS ms, and then start the heart_beat loop
                                            // End of ziheng's import and const
@@ -66,8 +67,8 @@ impl Eq for ChordObject {}
 // BackendStatus is a struct that Keeper stores, recording each backend's addr and liveness
 #[derive(Debug, Clone)]
 pub struct BackendStatus {
-    back_addr: String, // addr of the backend
-    liveness: bool,    // whether this backend is alive or not
+    pub back_addr: String, // addr of the backend
+    pub liveness: bool,    // whether this backend is alive or not
 }
 
 pub async fn serve_my_keeper_rpc(
@@ -154,7 +155,19 @@ impl KeeperServer {
             list_all_back_hash.push(back_obj.hash);
         }
 
-        // put all backs to a list as ChordObject, sort this list
+        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            println!("===Print list_all_back_chord");
+            for back_obj in self.list_all_back_chord.clone() {
+                println!(
+                    "Back_addr: {}, hash: {}",
+                    back_obj.addr.clone(),
+                    back_obj.hash
+                );
+            }
+            println!("===End of list_all_back_chord");
+        }
+
+        // put all keepers to a list as ChordObject, sort this list
         let mut list_all_keeper_chord: Vec<ChordObject> = Vec::new();
 
         for keeper in list_all_keep {
@@ -171,14 +184,35 @@ impl KeeperServer {
         for keeper_obj in list_all_keeper_chord.clone() {
             self.keepers.push(keeper_obj.addr.clone());
             self.hashed_keepers.push(keeper_obj.hash.clone());
+            if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+                println!(
+                    "Before eq: first {}\tsecond {}",
+                    keeper_obj.addr.clone(),
+                    self.keeper_addr
+                );
+            }
             if keeper_obj.addr.clone() == self.keeper_addr {
+                if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+                    println!("Keeper_addr {} is at index {}", keeper_obj.addr.clone(), i);
+                }
                 index_self = i;
             }
             i += 1;
         }
 
+        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            println!("===Print list_all_keeper_chord");
+            for k_obj in list_all_keeper_chord.clone() {
+                println!("Keeper_addr: {}, hash: {}", k_obj.addr.clone(), k_obj.hash);
+            }
+            println!("===End of list_all_keeper_chord");
+        }
+
+        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            println!("===Print back to keeper");
+        }
+
         //figure out what backends our keeper needs to take care of, and init fields in KeeperServer
-        let (first_back_index, last_back_index) = (0, 0);
         for back_obj in self.list_all_back_chord.clone() {
             // compute the index of the keeper that should take care of this backend
             let mut index_keeper = self
@@ -189,9 +223,28 @@ impl KeeperServer {
                 index_keeper = 0; // when index_keeper is larger than the index of the last keeper, this backend belongs to the first keeper
             }
 
+            if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+                println!(
+                    "Back_addr {}\tbelongs to keeper {}",
+                    back_obj.addr.clone(),
+                    self.keepers.clone()[index_keeper]
+                );
+            }
+
             if index_keeper == index_self {
+                if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+                    println!(
+                        "Confirm that back_addr {} is taken by {}",
+                        back_obj.addr.clone(),
+                        DEBUG_KEEPER.to_string()
+                    );
+                }
                 self.add_back_recover(back_obj.addr.clone());
             }
+        }
+
+        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            println!("===End back to keeper");
         }
 
         self.update_back_clock();
@@ -318,6 +371,17 @@ impl KeeperServer {
         }
         match added_keeper {
             Some(added_keeper) => {
+                if PRINT_DEBUG {
+                    println!(
+                        "----Handle join of keeper {}\t in keeper {}\n ----index_self {}, index_prev {}\nself.keeper: ",
+                        added_keeper.clone(),
+                        self.keeper_addr.clone(),
+                        index_self, index_prev
+                    );
+                    for keeper in self.keepers.clone() {
+                        println!("----{}", keeper.clone());
+                    }
+                }
                 // We found an added keeper. Need to update self's fields so that backends that should be handled by
                 let mut list_remove_back: Vec<String> = Vec::new();
 
@@ -358,22 +422,22 @@ impl KeeperServer {
                 }
 
                 // update self.backends, hashed_backends, list_back_recover, list_back_clock, prev_keeper, prev_alive_keeper_list_back
-                let mut new_backends: Vec<String> = Vec::new();
-                for back_obj in self.list_back_recover.clone() {
-                    match list_remove_back
-                        .clone()
-                        .into_iter()
-                        .find(|x| *x == back_obj.back_addr.clone())
-                    {
-                        Some(_) => (),
-                        None => {
-                            // didn't find back in list_remove_back, meaning this back should be in new self.backends
-                            new_backends.push(back_obj.back_addr.clone());
-                        }
-                    }
-                }
+                // let mut new_backends: Vec<String> = Vec::new();
+                // for back_obj in self.list_back_recover.clone() {
+                //     match list_remove_back
+                //         .clone()
+                //         .into_iter()
+                //         .find(|x| *x == back_obj.back_addr.clone())
+                //     {
+                //         Some(_) => (),
+                //         None => {
+                //             // didn't find back in list_remove_back, meaning this back should be in new self.backends
+                //             new_backends.push(back_obj.back_addr.clone());
+                //         }
+                //     }
+                // }
 
-                self.deduct_back_recover(new_backends.clone());
+                self.deduct_back_recover(list_remove_back.clone());
                 self.prev_keeper = added_keeper.clone();
                 // TODO: do we still need prev_alive_keeper_list_back?
 
@@ -423,6 +487,49 @@ impl KeeperServer {
         self.list_back_recover = list_back_copy;
     }
 
+    // prints this keeper's status. Including its addr, prev_keeper, back_ends responsible for, back_ends it syncs clock, special task, time passed
+    pub fn print_keeper_status(&mut self) {
+        let elapsed = match self.debug_timer.elapsed() {
+            Ok(e) => e,
+            Err(err) => {
+                println!(
+                    "Warning in print_keeper_status: now.elapsed() has error {}",
+                    err
+                );
+                return;
+            }
+        };
+        println!("=========");
+        println!(
+            "Time elapsed:{}s{}ms\tKeeper_addr:{}\tPrev_keeper_addr:{}\t",
+            elapsed.as_secs(),
+            elapsed.as_millis() - 1000 * (elapsed.as_secs() as u128),
+            self.keeper_addr,
+            self.prev_keeper
+        );
+        print!(
+            "\tResponsible for {} backends:",
+            self.list_back_recover.len()
+        );
+        for back in self.list_back_recover.clone() {
+            if back.liveness {
+                print!("({}, Alive)\t", back.back_addr);
+            } else {
+                print!("({}, Dead )\t", back.back_addr);
+            }
+        }
+        println!();
+        print!(
+            "\tSync clock for {} backends:",
+            self.list_back_recover.len()
+        );
+        for back in self.list_back_clock.clone() {
+            print!("({})\t", back);
+        }
+        println!();
+        println!("=========");
+    }
+
     // hear_beat is called every second. It will:
     // (0) sync the clock of all backends in list_back_clock
     // (1) if fail to connect to a backend, and it is in list_back_recover, and it was alive in the last round, then we wait for CLOCK_TIMEOUT_MS milliseconds and try again
@@ -433,8 +540,6 @@ impl KeeperServer {
     // (4) check if any keeper between it and its previous alive keeper is now added
     //      if so, update prev_keeper, and all fields related to backends
     pub async fn heart_beat(&mut self) -> TribResult<()> {
-        let now = SystemTime::now();
-
         let mut max_timestamp = 0;
         let mut list_dead_addr: Vec<String> = Vec::new();
         let mut list_alive_addr: Vec<String> = Vec::new();
@@ -459,14 +564,6 @@ impl KeeperServer {
             };
         }
 
-        if PRINT_DEBUG {
-            println!(
-                "This keeper observe {} alive backends and {} dead backends",
-                list_alive_addr.len(),
-                list_dead_addr.len()
-            );
-        }
-
         // sync the clock of alive backends
         for addr in list_alive_addr.clone() {
             let mut client = TribStorageClient::connect(addr.clone()).await?;
@@ -483,9 +580,16 @@ impl KeeperServer {
             match self.find_back_recover(addr.clone()) {
                 Some(back) => {
                     if back.liveness == false {
-                        self.set_back_recover_liveness(back.back_addr, true);
+                        if PRINT_DEBUG {
+                            println!(
+                                "----Handle join of backend {}\t in keeper {}",
+                                back.back_addr.clone(),
+                                self.keeper_addr.clone()
+                            );
+                        }
+                        self.set_back_recover_liveness(back.back_addr.clone(), true);
 
-                        self.join(&addr.clone());
+                        self.join(&back.back_addr.clone()).await;
                     }
                 }
                 None => {
@@ -498,12 +602,12 @@ impl KeeperServer {
         // (3) check if its previous alive keeper is now dead
         // TODO: ask Qizeng if this function also handles the update of self.backends, and migration of dead previous keeper's backends
         if self.keeper_addr != self.prev_keeper {
-            self.check_prev_keeper();
+            self.check_prev_keeper().await;
         }
 
         // (4) check if any keeper between it and its previous alive keeper is now added
         //      if so, update prev_keeper, and all fields related to backends
-        self.check_new_keeper_between();
+        self.check_new_keeper_between().await;
 
         // sleep before (1)
         // TODO: do we really need this?
@@ -527,10 +631,17 @@ impl KeeperServer {
                                     .await?;
                             }
                             Err(_) => {
+                                if PRINT_DEBUG {
+                                    println!(
+                                        "----Handle death of backend {}\t in keeper {}",
+                                        addr.clone(),
+                                        self.keeper_addr.clone()
+                                    );
+                                }
                                 // this backend is really newly dead
                                 self.set_back_recover_liveness(addr.clone(), false);
 
-                                self.migrate(&addr.clone());
+                                self.migrate(&addr.clone()).await;
                             }
                         };
                     }
@@ -542,16 +653,12 @@ impl KeeperServer {
             }
         }
 
-        if PRINT_DEBUG {
-            match now.elapsed() {
-                Ok(elapsed) => {
-                    println!("{}", elapsed.as_millis());
-                }
-                Err(e) => {
-                    println!("Error in heartbeat() : now.elapsed has an error: {:?}", e);
-                }
-            }
+        if PRINT_STATUS && DEBUG_KEEPER == self.keeper_addr {
+            self.print_keeper_status();
         }
+
         return Ok(());
     }
 }
+
+const DEBUG_KEEPER: &str = "http://127.0.0.1:34305";
