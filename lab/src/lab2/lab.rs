@@ -6,7 +6,7 @@ use tribbler::{
 use super::{
     binstorage::BinStorageClient, client::StorageClient, front::FrontServer,
     keeperserver::KeeperServer, keeperserverinit::serve_my_keeper_rpc,
-    keeperserverinit::KEEPER_INIT_DELAY_MS,
+    keeperserverinit::KEEPER_INIT_DELAY_MS, keeperserverinit::PRINT_DEBUG,
 };
 use std::net::{SocketAddr, ToSocketAddrs};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -97,13 +97,11 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         .collect();
 
     // init this keeper
-    let keeper_addr = kc.addrs[kc.this].clone();
+    let keeper_addr = keepers[kc.this].clone();
     let mut this_keeper = KeeperServer {
-        keeper_addr: keeper_addr,    //inited
-        backends: Vec::new(),        //inited
-        hashed_backends: Vec::new(), //inited
-        keepers: Vec::new(),         //inited
-        hashed_keepers: Vec::new(),  //inited
+        keeper_addr: keeper_addr,   //inited
+        keepers: Vec::new(),        //inited
+        hashed_keepers: Vec::new(), //inited
 
         list_back_recover: Vec::new(),   //inited
         list_back_clock: Vec::new(),     //inited
@@ -111,12 +109,29 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
 
         prev_keeper: "".to_string(),             //inited
         prev_alive_keeper_list_back: Vec::new(), // TODO: do we still need this?
+        debug_timer: SystemTime::now(),
     };
 
     // TODO: what if this keeper is restarted?
 
     // init its backends_recover and backends_clock
     this_keeper.init_back_recover_and_clock(backs.clone(), keepers.clone());
+
+    if PRINT_DEBUG == 1 {
+        println!(
+            "Init keeper {}, and it is responsible for {} backends",
+            this_keeper.keeper_addr,
+            this_keeper.list_back_recover.len()
+        );
+        for back in this_keeper.list_back_recover.clone() {
+            if back.liveness {
+                print!("({}, Alive)\t", back.back_addr);
+            } else {
+                print!("({}, Dead )\t", back.back_addr);
+            }
+        }
+        println!();
+    }
 
     // init prev_keeper, doesn't care whether the previous keeper is alive or not
     this_keeper.init_prev_keeper();
