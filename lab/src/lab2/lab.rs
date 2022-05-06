@@ -99,11 +99,9 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
     // init this keeper
     let keeper_addr = kc.addrs[kc.this].clone();
     let mut this_keeper = KeeperServer {
-        keeper_addr: keeper_addr,    //inited
-        backends: Vec::new(),        //inited
-        hashed_backends: Vec::new(), //inited
-        keepers: Vec::new(),         //inited
-        hashed_keepers: Vec::new(),  //inited
+        keeper_addr: keeper_addr,   //inited
+        keepers: Vec::new(),        //inited
+        hashed_keepers: Vec::new(), //inited
 
         list_back_recover: Vec::new(),   //inited
         list_back_clock: Vec::new(),     //inited

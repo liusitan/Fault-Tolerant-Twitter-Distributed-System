@@ -1,5 +1,5 @@
 use super::keeperserverinit::{BackendStatus, ChordObject};
-use super::utility::cons_hash;
+use super::utility::bin_aware_cons_hash;
 use crate::keeper::rpc_keeper_server_client::RpcKeeperServerClient;
 use crate::keeper::rpc_keeper_server_server::RpcKeeperServer;
 use crate::keeper::Null;
@@ -9,8 +9,6 @@ use tribbler::rpc::{Key, KeyValue, Pattern};
 
 pub struct KeeperServer {
     pub keeper_addr: String,
-    pub backends: Vec<String>,
-    pub hashed_backends: Vec<u64>,
     pub hashed_keepers: Vec<u64>,
     pub keepers: Vec<String>,
     pub prev_keeper: String,
@@ -44,6 +42,22 @@ impl RpcKeeperServer for KeeperServer {
 }
 
 impl KeeperServer {
+    // pub async fn recover_prev_keeper(&mut self, recovered_keeper: &String) {
+    //     // redistribute backends
+    //     let mut begin_pos = self.list_all_back_chord.binary_search(&ChordObject {
+    //         hash: bin_aware_cons_hash(recovered_keeper),
+    //         addr: recovered_keeper.clone()
+    //     }).unwrap_or_else(|x| (x - 1 + self.list_all_back_chord.len()) % self.list_all_back_chord.len());
+    //     begin_pos = (begin_pos + 1) % self.list_all_back_chord.len();
+    //     let mut end_pos = self.list_all_back_chord.binary_search(&ChordObject {
+    //         hash: bin_aware_cons_hash(&self.keeper_addr),
+    //         addr: self.keeper_addr.clone()
+    //     }).unwrap_or_else(|x| (x - 1 + self.list_all_back_chord.len()) % self.list_all_back_chord.len());
+    //     end_pos = (end_pos + 1) % self.list_all_back_chord.len();
+
+    //     while begin_pos != end_
+    // }
+
     pub async fn check_prev_keeper(&mut self) {
         let conn = RpcKeeperServerClient::connect(self.prev_keeper.clone()).await;
         if !conn.is_ok() {
@@ -53,23 +67,34 @@ impl KeeperServer {
             let mut new_backends = Vec::new();
             let mut new_ext_backends = Vec::new();
             let mut insert_pos = self
-                .hashed_backends
-                .binary_search(&cons_hash(&pred_keeper))
-                .unwrap_or_else(|x| (x - 1) % self.hashed_backends.len());
-            new_ext_backends.push(self.backends[insert_pos].clone());
-            insert_pos = (1 + insert_pos) % self.hashed_backends.len();
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(&pred_keeper),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| {
+                    (x + self.list_all_back_chord.len() - 1) % self.list_all_back_chord.len()
+                });
+
+            new_ext_backends.push(self.list_all_back_chord[insert_pos].addr.clone());
+            insert_pos = (1 + insert_pos) % self.list_all_back_chord.len();
 
             let mut end_pos = self
-                .hashed_backends
-                .binary_search(&cons_hash(&self.prev_keeper))
-                .unwrap_or_else(|x| (x - 1) % self.hashed_backends.len());
-            end_pos = (1 + end_pos) % self.hashed_backends.len();
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(&self.prev_keeper),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| {
+                    (x + self.list_all_back_chord.len() - 1) % self.list_all_back_chord.len()
+                });
+            end_pos = (1 + end_pos) % self.list_all_back_chord.len();
             while insert_pos != end_pos {
-                new_backends.push(self.backends[insert_pos].clone());
-                insert_pos = (1 + insert_pos) % self.hashed_backends.len();
+                new_backends.push(self.list_all_back_chord[insert_pos].addr.clone());
+                insert_pos = (1 + insert_pos) % self.list_all_back_chord.len();
             }
             new_ext_backends.extend(new_backends);
-            new_ext_backends.push(self.backends[insert_pos].clone());
+            new_ext_backends.push(self.list_all_back_chord[insert_pos].addr.clone());
 
             // check previous migration and join log
             let log_check_pass = self.check_prev_keeper_log().await;
@@ -84,8 +109,6 @@ impl KeeperServer {
 
             // upadte keeper states
             self.prev_keeper = pred_keeper.clone();
-            // self.backends.extend(&new_backends);
-            // todo: update other fields as well
         }
     }
 
@@ -128,22 +151,33 @@ impl KeeperServer {
     async fn check_list_keys_in_order(&self, keys: Vec<String>) {
         for key in keys {
             let mut idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(&key))
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(&key),
+                    addr: "".to_string(),
+                })
                 .unwrap_or_else(|x| x);
             let pidx = self.get_primary_backend(idx, &key).await;
-            let primary_srv = &self.backends[pidx];
+            let primary_srv = &self.list_all_back_chord[pidx].addr;
             let mut insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(&key))
-                .unwrap_or_else(|x| x % self.backends.len());
-            insert_idx = (insert_idx - 1) % self.backends.len();
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(&key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+            insert_idx =
+                (insert_idx + self.list_all_back_chord.len() - 1) % self.list_all_back_chord.len();
             let should_primary_idx = self.get_next_living_backend(insert_idx).await;
             if should_primary_idx != pidx {
                 // move
                 let val = self.get_key_list_value(primary_srv, &key).await;
-                self.migrate_list_keyval(&key, val, &self.backends[should_primary_idx])
-                    .await;
+                self.migrate_list_keyval(
+                    &key,
+                    val,
+                    &self.list_all_back_chord[should_primary_idx].addr,
+                )
+                .await;
             }
         }
     }
@@ -151,22 +185,33 @@ impl KeeperServer {
     async fn check_string_keys_in_order(&self, keys: Vec<String>) {
         for key in keys {
             let mut idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(&key))
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(&key),
+                    addr: "".to_string(),
+                })
                 .unwrap_or_else(|x| x);
             let pidx = self.get_primary_backend(idx, &key).await;
-            let primary_srv = &self.backends[pidx];
+            let primary_srv = &self.list_all_back_chord[pidx].addr;
             let mut insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(&key))
-                .unwrap_or_else(|x| x % self.backends.len());
-            insert_idx = (insert_idx - 1) % self.backends.len();
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(&key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+            insert_idx =
+                (insert_idx + self.list_all_back_chord.len() - 1) % self.list_all_back_chord.len();
             let should_primary_idx = self.get_next_living_backend(insert_idx).await;
             if should_primary_idx != pidx {
                 // move
                 let val = self.get_key_string_value(primary_srv, &key).await;
-                self.migrate_string_keyval(&key, &val.unwrap(), &self.backends[should_primary_idx])
-                    .await;
+                self.migrate_string_keyval(
+                    &key,
+                    &val.unwrap(),
+                    &self.list_all_back_chord[should_primary_idx].addr,
+                )
+                .await;
             }
         }
     }
@@ -182,7 +227,7 @@ impl KeeperServer {
 
     async fn get_primary_backend(&self, mut idx: usize, key: &String) -> usize {
         loop {
-            let backend = &self.backends[idx];
+            let backend = &self.list_all_back_chord[idx].addr;
             let conn = TribStorageClient::connect(backend.clone()).await;
             if conn.is_ok() {
                 let mut client = conn.unwrap();
@@ -197,17 +242,20 @@ impl KeeperServer {
                     }
                 }
             }
-            idx = (idx + 1) % self.backends.len();
+            idx = (idx + 1) % self.list_all_back_chord.len();
         }
     }
 
     async fn get_list_val(&self, key: &String) -> Vec<String> {
         let mut idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(key))
-            .unwrap_or_else(|x| x % self.backends.len());
-        for _ in 0..self.backends.len() {
-            let backend = &self.backends[idx];
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(key),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+        for _ in 0..self.list_all_back_chord.len() {
+            let backend = &self.list_all_back_chord[idx].addr;
             let conn = TribStorageClient::connect(backend.clone()).await;
             if conn.is_ok() {
                 let mut client = conn.unwrap();
@@ -217,7 +265,7 @@ impl KeeperServer {
                     return list_key_resp.unwrap().into_inner().list;
                 }
             }
-            idx = (idx + 1) % self.backends.len();
+            idx = (idx + 1) % self.list_all_back_chord.len();
         }
         return Vec::new();
     }
@@ -227,19 +275,19 @@ impl KeeperServer {
             if insert_idx == failed_idx {
                 return true;
             }
-            let backend = &self.backends[insert_idx];
+            let backend = &self.list_all_back_chord[insert_idx].addr;
             let conn = TribStorageClient::connect(backend.clone()).await;
             if conn.is_ok() {
                 return false;
             }
-            insert_idx = (insert_idx + 1) % self.backends.len();
+            insert_idx = (insert_idx + 1) % self.list_all_back_chord.len();
         }
     }
 
     async fn get_next_replica_backend(&self, mut idx: usize, key: &String) -> usize {
-        idx = (idx + 1) % self.backends.len();
+        idx = (idx + 1) % self.list_all_back_chord.len();
         loop {
-            let backend = &self.backends[idx];
+            let backend = &self.list_all_back_chord[idx].addr;
             let conn = TribStorageClient::connect(backend.clone()).await;
             if conn.is_ok() {
                 let mut client = conn.unwrap();
@@ -254,19 +302,19 @@ impl KeeperServer {
                     }
                 }
             }
-            idx = (idx + 1) % self.backends.len();
+            idx = (idx + 1) % self.list_all_back_chord.len();
         }
     }
 
     async fn get_next_living_backend(&self, mut idx: usize) -> usize {
-        idx = (idx + 1) % self.backends.len();
+        idx = (idx + 1) % self.list_all_back_chord.len();
         loop {
-            let backend = &self.backends[idx];
+            let backend = &self.list_all_back_chord[idx].addr;
             let conn = TribStorageClient::connect(backend.clone()).await;
             if conn.is_ok() {
                 return idx;
             }
-            idx = (idx + 1) % self.backends.len();
+            idx = (idx + 1) % self.list_all_back_chord.len();
         }
     }
 
@@ -274,16 +322,16 @@ impl KeeperServer {
         // binary search
         let mut srv_idx = self
             .hashed_keepers
-            .binary_search(&cons_hash(failed_keeper))
+            .binary_search(&bin_aware_cons_hash(failed_keeper))
             .unwrap_or_else(|x| x % self.hashed_keepers.len());
-        srv_idx = (srv_idx - 1) % self.keepers.len();
+        srv_idx = (srv_idx + self.keepers.len() - 1) % self.keepers.len();
         loop {
             let keeper = &self.keepers[srv_idx];
             let conn = TribStorageClient::connect(keeper.clone()).await;
             if conn.is_ok() {
                 return keeper.clone();
             }
-            srv_idx = (srv_idx - 1) % self.keepers.len();
+            srv_idx = (srv_idx + self.keepers.len() - 1) % self.keepers.len();
         }
     }
 
@@ -291,7 +339,7 @@ impl KeeperServer {
         // binary search
         let mut srv_idx = self
             .hashed_keepers
-            .binary_search(&cons_hash(failed_keeper))
+            .binary_search(&bin_aware_cons_hash(failed_keeper))
             .unwrap_or_else(|x| x % self.hashed_keepers.len());
         srv_idx = (srv_idx + 1) % self.keepers.len();
         loop {
@@ -307,28 +355,35 @@ impl KeeperServer {
     async fn find_predecessor_backend(&self, failed_backend: &String) -> String {
         // binary search
         let mut srv_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(failed_backend))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
-        srv_idx = (srv_idx - 1) % self.backends.len();
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(failed_backend),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+        srv_idx = (srv_idx + self.list_all_back_chord.len() - 1) % self.list_all_back_chord.len();
         loop {
-            let backend = &self.backends[srv_idx];
+            let backend = &self.list_all_back_chord[srv_idx].addr;
             let conn = TribStorageClient::connect(backend.clone()).await;
             if conn.is_ok() {
                 return backend.clone();
             }
-            srv_idx = (srv_idx - 1) % self.backends.len();
+            srv_idx =
+                (srv_idx + self.list_all_back_chord.len() - 1) % self.list_all_back_chord.len();
         }
     }
 
     async fn find_succesor_backend(&self, failed_backend: &String) -> String {
         // binary search
         let mut srv_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(failed_backend))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(failed_backend),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
         let next_srv = self.get_next_living_backend(srv_idx).await;
-        return self.backends[next_srv].clone();
+        return self.list_all_back_chord[next_srv].addr.clone();
     }
 
     async fn get_keys(&self, srv: &String) -> Vec<String> {
@@ -371,10 +426,13 @@ impl KeeperServer {
         let log_entry_key = format!("{}:{}", KEEPER_LOG, self.keeper_addr);
         let log_entry_val = format!("{}:{}:{}", FAIL_TASK, failed_backend, START_MSG);
         let log_srv_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(&log_entry_key))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
-        let log_srv_primary = &self.backends[log_srv_idx];
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(&log_entry_key),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+        let log_srv_primary = &self.list_all_back_chord[log_srv_idx].addr;
 
         let conn_primary = TribStorageClient::connect(log_srv_primary.clone()).await;
         if conn_primary.is_ok() {
@@ -391,10 +449,13 @@ impl KeeperServer {
         let log_entry_key = format!("{}:{}", KEEPER_LOG, self.keeper_addr);
         let log_entry_val = format!("{}:{}:{}", FAIL_TASK, failed_backend, END_MSG);
         let log_srv_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(&log_entry_key))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
-        let log_srv_primary = &self.backends[log_srv_idx];
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(&log_entry_key),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+        let log_srv_primary = &self.list_all_back_chord[log_srv_idx].addr;
 
         let conn_primary = TribStorageClient::connect(log_srv_primary.clone()).await;
         if conn_primary.is_ok() {
@@ -411,10 +472,13 @@ impl KeeperServer {
         let log_entry_key = format!("{}:{}", KEEPER_LOG, self.keeper_addr);
         let log_entry_val = format!("{}:{}:{}", REC_TASK, recover_backend.clone(), START_MSG);
         let log_srv_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(&log_entry_key))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
-        let log_srv_primary = &self.backends[log_srv_idx];
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(&log_entry_key),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+        let log_srv_primary = &self.list_all_back_chord[log_srv_idx].addr;
 
         let conn_primary = TribStorageClient::connect(log_srv_primary.clone()).await;
         if conn_primary.is_ok() {
@@ -431,10 +495,13 @@ impl KeeperServer {
         let log_entry_key = format!("{}:{}", KEEPER_LOG, self.keeper_addr);
         let log_entry_val = format!("{}:{}:{}", REC_TASK, recover_backend.clone(), END_MSG);
         let log_srv_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(&log_entry_key))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
-        let log_srv_primary = &self.backends[log_srv_idx];
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(&log_entry_key),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
+        let log_srv_primary = &self.list_all_back_chord[log_srv_idx].addr;
 
         let conn_primary = TribStorageClient::connect(log_srv_primary.clone()).await;
         if conn_primary.is_ok() {
@@ -500,7 +567,7 @@ impl KeeperServer {
 
     // consider write log for starting migration for failed backend first
     // assuming no backend fails after a failure
-    async fn migrate(&self, failed_backend: &String) {
+    pub async fn migrate(&self, failed_backend: &String) {
         // use write-ahead log to tolerate keeper fault
         self.start_migration(failed_backend).await;
 
@@ -519,19 +586,25 @@ impl KeeperServer {
         list_keys_succ_srv.extend(self.get_list_keys(&next_srv).await);
 
         let failed_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(failed_backend))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(failed_backend),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
 
         // do successor migration first
         for string_key in string_keys_succ_srv.iter() {
             // binary search the key hash
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(string_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(string_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, string_key).await;
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             let is_failed_backend_primary =
                 self.is_failed_backend_primary(insert_idx, failed_idx).await;
 
@@ -540,7 +613,7 @@ impl KeeperServer {
                 let next_succ_srv_idx =
                     self.get_next_replica_backend(primary_idx, string_key).await;
                 let val = self.get_key_string_value(primary_srv, string_key).await;
-                let next_succ_srv = &self.backends[next_succ_srv_idx];
+                let next_succ_srv = &self.list_all_back_chord[next_succ_srv_idx].addr;
                 self.migrate_string_keyval(&string_key, &val.unwrap(), next_succ_srv)
                     .await;
             }
@@ -548,12 +621,15 @@ impl KeeperServer {
 
         for list_key in list_keys_succ_srv.iter() {
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(list_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(list_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
 
             let primary_idx = self.get_primary_backend(insert_idx, list_key).await;
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             let is_failed_backend_primary =
                 self.is_failed_backend_primary(insert_idx, failed_idx).await;
 
@@ -561,7 +637,7 @@ impl KeeperServer {
                 // the succesor key now is the primary
                 let next_succ_srv_idx = self.get_next_replica_backend(primary_idx, list_key).await;
                 let val = self.get_key_list_value(primary_srv, list_key).await;
-                let next_succ_srv = &self.backends[next_succ_srv_idx];
+                let next_succ_srv = &self.list_all_back_chord[next_succ_srv_idx].addr;
                 self.migrate_list_keyval(list_key, val, next_succ_srv).await;
             }
         }
@@ -571,16 +647,19 @@ impl KeeperServer {
         for string_key in string_keys_prev_srv.iter() {
             // binary search the key hash
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(string_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(string_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, string_key).await;
 
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_srv.eq(&prev_srv) {
                 // primary key at primary srv, make a copy
                 let replica_idx = self.get_next_replica_backend(primary_idx, string_key).await;
-                let replica_srv = &self.backends[replica_idx];
+                let replica_srv = &self.list_all_back_chord[replica_idx].addr;
                 let val = self.get_key_string_value(&primary_srv, string_key).await;
                 self.migrate_string_keyval(string_key, &val.unwrap(), replica_srv)
                     .await;
@@ -590,16 +669,19 @@ impl KeeperServer {
         // loop string list and migrate
         for list_key in list_keys_prev_srv.iter() {
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(list_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(list_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, list_key).await;
 
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_srv.eq(&prev_srv) {
                 // primary key at primary srv, make a copy
                 let replica_idx = self.get_next_replica_backend(primary_idx, list_key).await;
-                let replica_srv = &self.backends[replica_idx];
+                let replica_srv = &self.list_all_back_chord[replica_idx].addr;
                 let val = self.get_key_list_value(&primary_srv, list_key).await;
                 self.migrate_list_keyval(list_key, val, replica_srv).await;
             }
@@ -608,7 +690,7 @@ impl KeeperServer {
         self.end_migration(failed_backend).await;
     }
 
-    async fn join(&self, recover_backend: &String) {
+    pub async fn join(&self, recover_backend: &String) {
         // use write-ahead log to tolerate keeper fault
         self.start_recover(recover_backend).await;
 
@@ -626,19 +708,25 @@ impl KeeperServer {
         list_keys_succ_srv.extend(self.get_list_keys(&next_srv).await);
 
         let recover_idx = self
-            .hashed_backends
-            .binary_search(&cons_hash(recover_backend))
-            .unwrap_or_else(|x| x % self.hashed_backends.len());
+            .list_all_back_chord
+            .binary_search(&ChordObject {
+                hash: bin_aware_cons_hash(recover_backend),
+                addr: "".to_string(),
+            })
+            .unwrap_or_else(|x| x % self.list_all_back_chord.len());
 
         // do successor migration first
         for string_key in string_keys_succ_srv.iter() {
             // binary search the key hash
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(string_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(string_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, string_key).await;
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_idx == recover_idx {
                 // data should be moved from succ srv to recover srv
                 let val = self.get_key_string_value(primary_srv, string_key).await;
@@ -650,11 +738,14 @@ impl KeeperServer {
         for list_key in list_keys_succ_srv.iter() {
             // binary search the key hash
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(list_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(list_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, list_key).await;
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_idx == recover_idx {
                 // data should be moved from succ srv to recover srv
                 let val = self.get_key_list_value(primary_srv, list_key).await;
@@ -668,12 +759,15 @@ impl KeeperServer {
         for string_key in string_keys_prev_srv.iter() {
             // binary search the key hash
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(string_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(string_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, string_key).await;
 
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_srv.eq(&prev_srv) {
                 // recovered srv should store one copy
                 let val = self.get_key_string_value(primary_srv, string_key).await;
@@ -685,12 +779,15 @@ impl KeeperServer {
         // loop string list and migrate
         for list_key in list_keys_prev_srv.iter() {
             let insert_idx = self
-                .hashed_backends
-                .binary_search(&cons_hash(list_key))
-                .unwrap_or_else(|x| x % self.hashed_backends.len());
+                .list_all_back_chord
+                .binary_search(&ChordObject {
+                    hash: bin_aware_cons_hash(list_key),
+                    addr: "".to_string(),
+                })
+                .unwrap_or_else(|x| x % self.list_all_back_chord.len());
             let primary_idx = self.get_primary_backend(insert_idx, list_key).await;
 
-            let primary_srv = &self.backends[primary_idx];
+            let primary_srv = &self.list_all_back_chord[primary_idx].addr;
             if primary_srv.eq(&prev_srv) {
                 // recovered srv should store one copy
                 let val = self.get_key_list_value(primary_srv, list_key).await;

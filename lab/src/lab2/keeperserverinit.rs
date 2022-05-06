@@ -1,5 +1,5 @@
 use super::keeperserver::KeeperServer;
-use super::utility::cons_hash;
+use super::utility::bin_aware_cons_hash;
 use crate::keeper::rpc_keeper_server_client::RpcKeeperServerClient;
 use crate::keeper::rpc_keeper_server_server::RpcKeeperServer;
 use crate::keeper::rpc_keeper_server_server::RpcKeeperServerServer;
@@ -39,8 +39,8 @@ impl RpcKeeperServer for MyKeeperRpcServer {
 // ChordObject is an object stored on the ring of Chord
 #[derive(Debug, Clone)]
 pub struct ChordObject {
-    hash: u64, // hash = hash(addr)
-    addr: String,
+    pub hash: u64, // hash = hash(addr)
+    pub addr: String,
 }
 
 impl Ord for ChordObject {
@@ -142,7 +142,7 @@ impl KeeperServer {
 
         for back in list_all_back {
             let o = ChordObject {
-                hash: cons_hash(&back.clone()), // hash = hash(addr)
+                hash: bin_aware_cons_hash(&back.clone()), // hash = hash(addr)
                 addr: back,
             };
             self.list_all_back_chord.push(o);
@@ -159,7 +159,7 @@ impl KeeperServer {
 
         for keeper in list_all_keep {
             let o = ChordObject {
-                hash: cons_hash(&keeper.clone()), // hash = hash(addr)
+                hash: bin_aware_cons_hash(&keeper.clone()), // hash = hash(addr)
                 addr: keeper,
             };
             list_all_keeper_chord.push(o);
@@ -190,8 +190,6 @@ impl KeeperServer {
             }
 
             if index_keeper == index_self {
-                self.backends.push(back_obj.addr.clone());
-                self.hashed_backends.push(back_obj.hash.clone());
                 self.add_back_recover(back_obj.addr.clone());
             }
         }
@@ -235,7 +233,7 @@ impl KeeperServer {
         //                          [0,1,2,8], all backends [0,..,8] will have 7 and 3
         let (mut l, mut r) = find_lr(list_recover_back_index.clone());
         let len = list_all_back_hash.len();
-        l = (l - 1 + len) % len;
+        l = (l + len - 1) % len;
         r = (r + 1) % len;
 
         // if append l and r to list, sort list, and remove duplicate
@@ -325,15 +323,15 @@ impl KeeperServer {
                 let mut list_triple_chord: Vec<ChordObject> = vec![
                     ChordObject {
                         addr: self.keeper_addr.clone(),
-                        hash: cons_hash(&self.keeper_addr.clone()),
+                        hash: bin_aware_cons_hash(&self.keeper_addr.clone()),
                     },
                     ChordObject {
                         addr: added_keeper.clone(),
-                        hash: cons_hash(&added_keeper.clone()),
+                        hash: bin_aware_cons_hash(&added_keeper.clone()),
                     },
                     ChordObject {
                         addr: self.prev_keeper.clone(),
-                        hash: cons_hash(&self.prev_keeper.clone()),
+                        hash: bin_aware_cons_hash(&self.prev_keeper.clone()),
                     },
                 ];
                 list_triple_chord.sort();
@@ -378,7 +376,8 @@ impl KeeperServer {
 
                 self.hashed_backends = Vec::new();
                 for back in new_backends.clone() {
-                    self.hashed_backends.push(cons_hash(&back.clone()));
+                    self.hashed_backends
+                        .push(bin_aware_cons_hash(&back.clone()));
                 }
                 self.update_back_clock();
             }
