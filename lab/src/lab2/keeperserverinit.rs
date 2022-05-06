@@ -17,7 +17,7 @@ use tribbler::err::TribResult;
 use tribbler::rpc;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
 
-pub const PRINT_DEBUG: bool = false;
+pub const PRINT_DEBUG: i32 = 2; // 0 not print, 1 print only status, 2 print status and less, 3 print all
 pub const PRINT_STATUS: bool = true;
 const CLOCK_TIMEOUT_MS: u64 = 300; // when a backend failed to connect, we sleep for CLOCK_TIMEOUT_MS ms, and give it one chance
 pub const KEEPER_INIT_DELAY_MS: u64 = 500; // when a keeper is initialized, sleep for KEEPER_INIT_DELAY_MS ms, and then start the heart_beat loop
@@ -155,7 +155,7 @@ impl KeeperServer {
             list_all_back_hash.push(back_obj.hash);
         }
 
-        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+        if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
             println!("===Print list_all_back_chord");
             for back_obj in self.list_all_back_chord.clone() {
                 println!(
@@ -184,7 +184,7 @@ impl KeeperServer {
         for keeper_obj in list_all_keeper_chord.clone() {
             self.keepers.push(keeper_obj.addr.clone());
             self.hashed_keepers.push(keeper_obj.hash.clone());
-            if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
                 println!(
                     "Before eq: first {}\tsecond {}",
                     keeper_obj.addr.clone(),
@@ -192,7 +192,7 @@ impl KeeperServer {
                 );
             }
             if keeper_obj.addr.clone() == self.keeper_addr {
-                if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+                if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
                     println!("Keeper_addr {} is at index {}", keeper_obj.addr.clone(), i);
                 }
                 index_self = i;
@@ -200,7 +200,7 @@ impl KeeperServer {
             i += 1;
         }
 
-        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+        if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
             println!("===Print list_all_keeper_chord");
             for k_obj in list_all_keeper_chord.clone() {
                 println!("Keeper_addr: {}, hash: {}", k_obj.addr.clone(), k_obj.hash);
@@ -208,7 +208,7 @@ impl KeeperServer {
             println!("===End of list_all_keeper_chord");
         }
 
-        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+        if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
             println!("===Print back to keeper");
         }
 
@@ -223,7 +223,7 @@ impl KeeperServer {
                 index_keeper = 0; // when index_keeper is larger than the index of the last keeper, this backend belongs to the first keeper
             }
 
-            if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
                 println!(
                     "Back_addr {}\tbelongs to keeper {}",
                     back_obj.addr.clone(),
@@ -232,7 +232,7 @@ impl KeeperServer {
             }
 
             if index_keeper == index_self {
-                if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+                if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
                     println!(
                         "Confirm that back_addr {} is taken by {}",
                         back_obj.addr.clone(),
@@ -243,7 +243,7 @@ impl KeeperServer {
             }
         }
 
-        if PRINT_DEBUG && self.keeper_addr == DEBUG_KEEPER.to_string() {
+        if PRINT_DEBUG == 3 && self.keeper_addr == DEBUG_KEEPER.to_string() {
             println!("===End back to keeper");
         }
 
@@ -260,6 +260,26 @@ impl KeeperServer {
     // this function inits list_back_clock
     // it can also be used anytime to update list_back_clock as long as field backends is up-to-date
     fn update_back_clock(&mut self) {
+        if PRINT_DEBUG >= 2 && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            println!(
+                "====Before update_back_clock in keeper {}, we have list_back_clock of size {}:",
+                self.keeper_addr,
+                self.list_back_clock.len()
+            );
+            for back in self.list_back_clock.clone() {
+                println!("{}", back);
+            }
+            println!("====End of list_back_clock\n");
+
+            println!(
+                "====We have list_back_recover of size {}:",
+                self.list_back_recover.len()
+            );
+            for back in self.list_back_recover.clone() {
+                println!("{}", back.back_addr);
+            }
+            println!("====End of list_back_recover\n");
+        }
         self.list_back_clock = Vec::new();
         if self.list_back_recover.len() == 0 {
             return;
@@ -291,6 +311,12 @@ impl KeeperServer {
         let mut r = r_ as i32;
         l = (l - 1 + len) % len;
         r = (r + 1) % len;
+
+        if PRINT_DEBUG >= 2 && self.keeper_addr == DEBUG_KEEPER.to_string() {
+            println!("====In update_back_clock in keeper {}", self.keeper_addr);
+            println!("====l_ {}\tr_ {}", l_, r_);
+            println!("====l {}\tr {}", l, r_);
+        }
 
         // if append l and r to list, sort list, and remove duplicate
         list_recover_back_index.push(l as usize);
@@ -371,7 +397,7 @@ impl KeeperServer {
         }
         match added_keeper {
             Some(added_keeper) => {
-                if PRINT_DEBUG {
+                if PRINT_DEBUG == 3 {
                     println!(
                         "----Handle join of keeper {}\t in keeper {}\n ----index_self {}, index_prev {}\nself.keeper: ",
                         added_keeper.clone(),
@@ -582,7 +608,7 @@ impl KeeperServer {
             match self.find_back_recover(addr.clone()) {
                 Some(back) => {
                     if back.liveness == false {
-                        if PRINT_DEBUG {
+                        if PRINT_DEBUG == 3 {
                             println!(
                                 "----Handle join of backend {}\t in keeper {}",
                                 back.back_addr.clone(),
@@ -634,7 +660,7 @@ impl KeeperServer {
                                     .await?;
                             }
                             Err(_) => {
-                                if PRINT_DEBUG {
+                                if PRINT_DEBUG == 3 {
                                     println!(
                                         "----Handle death of backend {}\t in keeper {}",
                                         addr.clone(),
@@ -656,7 +682,7 @@ impl KeeperServer {
             }
         }
 
-        if PRINT_STATUS && DEBUG_KEEPER == self.keeper_addr {
+        if PRINT_DEBUG >= 1 && DEBUG_KEEPER == self.keeper_addr {
             self.print_keeper_status();
         }
 

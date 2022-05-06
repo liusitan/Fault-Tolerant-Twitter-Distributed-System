@@ -117,7 +117,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
     // init its backends_recover and backends_clock
     this_keeper.init_back_recover_and_clock(backs.clone(), keepers.clone());
 
-    if PRINT_DEBUG {
+    if PRINT_DEBUG == 1 {
         println!(
             "Init keeper {}, and it is responsible for {} backends",
             this_keeper.keeper_addr,
