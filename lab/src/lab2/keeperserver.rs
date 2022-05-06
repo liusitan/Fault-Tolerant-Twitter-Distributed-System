@@ -575,9 +575,11 @@ impl KeeperServer {
     pub async fn migrate(&self, failed_backend: &String) {
         // use write-ahead log to tolerate keeper fault
         self.start_migration(failed_backend).await;
-
+        log::info!("failed_srv: {}", failed_backend);
         let prev_srv = self.find_predecessor_backend(failed_backend).await;
+        log::info!("prev_srv: {}", prev_srv);
         let next_srv = self.find_succesor_backend(failed_backend).await;
+        log::info!("next_srv: {}", next_srv);
 
         // get the keys from prev_srv and next_srv
         let mut string_keys_prev_srv = Vec::new();
@@ -697,6 +699,7 @@ impl KeeperServer {
 
     pub async fn join(&self, recover_backend: &String) {
         // use write-ahead log to tolerate keeper fault
+        log::info!("new backend joining: {}", recover_backend);
         self.start_recover(recover_backend).await;
 
         let prev_srv = self.find_predecessor_backend(recover_backend).await;

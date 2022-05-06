@@ -112,8 +112,8 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         list_back_clock: Vec::new(),     //inited
         list_all_back_chord: Vec::new(), //inited
 
-        prev_keeper: "".to_string(),             //inited
-        debug_timer: SystemTime::now(),            //inited
+        prev_keeper: "".to_string(),    //inited
+        debug_timer: SystemTime::now(), //inited
     };
 
     // init its backends_recover and backends_clock

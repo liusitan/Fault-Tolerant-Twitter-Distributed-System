@@ -52,11 +52,13 @@ async fn setup_backend(
 
     let handle = spawn_back(cfg);
     let ready = rx.recv_timeout(Duration::from_secs(5))?;
+    log::info!("Waiting for ready signal from backends...");
     if !ready {
         return Err(Box::new(TribblerError::Unknown(
             "back failed to start".to_string(),
         )));
     }
+    log::info!("Backend ready!");
     // let client = lab1::new_client(format!("http://{}", addr).as_str()).await?;
     Ok((handle, shut_tx.clone()))
 }
@@ -210,27 +212,28 @@ async fn test_fault_tolerance_single_keeper_multi_fail() -> TribResult<()> {
     let (bk4_handle, bk4_shutdown) = setup_backend(Some(&"127.0.0.1:8003"), None).await?;
     let (bk5_handle, bk5_shutdown) = setup_backend(Some(&"127.0.0.1:8004"), None).await?;
     let mut backs = vec!["127.0.0.1:8000".to_string(), "127.0.0.1:8001".to_string(), "127.0.0.1:8002".to_string(), "127.0.0.1:8003".to_string(), "127.0.0.1:8004".to_string()];
+    let mut backs2 = vec!["http://127.0.0.1:8000".to_string(), "http://127.0.0.1:8001".to_string(), "http://127.0.0.1:8002".to_string(), "http://127.0.0.1:8003".to_string(), "http://127.0.0.1:8004".to_string()];
     let keepers = vec!["127.0.0.1:8005".to_string()];
-    backs.sort_by(|x, y| cons_hash(x).cmp(&cons_hash(y)));
-    let hashed_backends:Vec<u64> = backs.iter().map(|x| cons_hash(x)).collect();
-    log::info!("{:?}", backs);
+    backs2.sort_by(|x, y| cons_hash(x).cmp(&cons_hash(y)));
+    let hashed_backends:Vec<u64> = backs2.iter().map(|x| cons_hash(x)).collect();
+    log::info!("{:?}", backs2);
     // start the keeper
     let (kp_handle, kp_shutdown) = setup_keeper(backs.clone(), keepers, 0, 0).await?;
 
     // store the same key-value pairs in two adjacent backends
     let insert_pos = hashed_backends.binary_search(&cons_hash(&"hello".to_string())).unwrap_or_else(|x| x % hashed_backends.len());
-    let insert_bk = &backs[insert_pos];
+    let insert_bk = &backs2[insert_pos];
 
     // log::info!("primary set");
-    let mut primary_client = TribStorageClient::connect(format!("http://{}", insert_bk.clone())).await?;
+    let mut primary_client = TribStorageClient::connect(insert_bk.clone()).await?;
     primary_client.set(rpc::KeyValue {
         key: "hello".to_string(),
         value: "world".to_string(),
     }).await;
 
     // log::info!("backup set");
-    let backup_bk = &backs[(insert_pos + 1) % backs.len()];
-    let mut backup_client = TribStorageClient::connect(format!("http://{}", backup_bk.clone())).await?;
+    let backup_bk = &backs2[(insert_pos + 1) % backs2.len()];
+    let mut backup_client = TribStorageClient::connect(backup_bk.clone()).await?;
     backup_client.set(rpc::KeyValue {
         key: "hello".to_string(),
         value: "world".to_string(),
@@ -240,11 +243,11 @@ async fn test_fault_tolerance_single_keeper_multi_fail() -> TribResult<()> {
 
     // primary srv crash
     match insert_bk.as_str() {
-        "127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
-        "127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
-        "127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
-        "127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
-        "127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
+        "http://127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
+        "http://127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
+        "http://127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
+        "http://127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
+        "http://127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
         _ => {},
     };
 
@@ -253,27 +256,25 @@ async fn test_fault_tolerance_single_keeper_multi_fail() -> TribResult<()> {
     log::info!("sending shutdown signal to {}...", backup_bk);
 
     match backup_bk.as_str() {
-        "127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
-        "127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
-        "127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
-        "127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
-        "127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
+        "http://127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
+        "http://127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
+        "http://127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
+        "http://127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
+        "http://127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
         _ => {},
     };
 
     sleep(Duration::from_secs(5));
 
-    let backup_srv_now = &backs[(insert_pos + 3) % backs.len()];
+    let backup_srv_now = &backs2[(insert_pos + 3) % backs.len()];
     log::info!("checking key on server {}", backup_srv_now);
-    let val_res = get_string_key_val_from_srv(&format!("http://{}", backup_srv_now), &"hello".to_string()).await;
+    let val_res = get_string_key_val_from_srv(backup_srv_now, &"hello".to_string()).await;
     assert_eq!(val_res.is_ok(), true);
     let val = val_res.unwrap();
     assert_eq!(val.is_some(), true);
     assert_eq!(val.unwrap(), "world".to_string());
     Ok(())
 }
-
-
 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -286,27 +287,28 @@ async fn test_fault_tolerance_single_keeper_join() -> TribResult<()> {
     let (bk4_handle, bk4_shutdown) = setup_backend(Some(&"127.0.0.1:8003"), None).await?;
     let (bk5_handle, bk5_shutdown) = setup_backend(Some(&"127.0.0.1:8004"), None).await?;
     let mut backs = vec!["127.0.0.1:8000".to_string(), "127.0.0.1:8001".to_string(), "127.0.0.1:8002".to_string(), "127.0.0.1:8003".to_string(), "127.0.0.1:8004".to_string()];
+    let mut backs2 = vec!["http://127.0.0.1:8000".to_string(), "http://127.0.0.1:8001".to_string(), "http://127.0.0.1:8002".to_string(), "http://127.0.0.1:8003".to_string(), "http://127.0.0.1:8004".to_string()];
     let keepers = vec!["127.0.0.1:8005".to_string()];
-    backs.sort_by(|x, y| cons_hash(x).cmp(&cons_hash(y)));
-    let hashed_backends:Vec<u64> = backs.iter().map(|x| cons_hash(x)).collect();
-
+    backs2.sort_by(|x, y| cons_hash(x).cmp(&cons_hash(y)));
+    let hashed_backends:Vec<u64> = backs2.iter().map(|x| cons_hash(x)).collect();
+    log::info!("{:?}", backs2);
     // start the keeper
     let (kp_handle, kp_shutdown) = setup_keeper(backs.clone(), keepers, 0, 0).await?;
 
     // store the same key-value pairs in two adjacent backends
     let insert_pos = hashed_backends.binary_search(&cons_hash(&"hello".to_string())).unwrap_or_else(|x| x % hashed_backends.len());
-    let insert_bk = &backs[insert_pos];
+    let insert_bk = &backs2[insert_pos];
 
     // log::info!("primary set");
-    let mut primary_client = TribStorageClient::connect(format!("http://{}", insert_bk.clone())).await?;
+    let mut primary_client = TribStorageClient::connect(insert_bk.clone()).await?;
     primary_client.set(rpc::KeyValue {
         key: "hello".to_string(),
         value: "world".to_string(),
     }).await;
 
     // log::info!("backup set");
-    let backup_bk = &backs[(insert_pos + 1) % backs.len()];
-    let mut backup_client = TribStorageClient::connect(format!("http://{}", backup_bk.clone())).await?;
+    let backup_bk = &backs2[(insert_pos + 1) % backs2.len()];
+    let mut backup_client = TribStorageClient::connect(backup_bk.clone()).await?;
     backup_client.set(rpc::KeyValue {
         key: "hello".to_string(),
         value: "world".to_string(),
@@ -316,94 +318,27 @@ async fn test_fault_tolerance_single_keeper_join() -> TribResult<()> {
 
     // primary srv crash
     match insert_bk.as_str() {
-        "127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
-        "127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
-        "127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
-        "127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
-        "127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
+        "http://127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
+        "http://127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
+        "http://127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
+        "http://127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
+        "http://127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
         _ => {},
     };
 
     sleep(Duration::from_secs(5));
 
     log::info!("reviving {}...", insert_bk);
-    // backend recovered
-    setup_backend(Some(&insert_bk.as_str()), None).await?;
+    
+    setup_backend(Some(&"127.0.0.1:8004"), None).await?;
+    setup_backend(Some(&"127.0.0.1:8004"), None).await?;
 
     sleep(Duration::from_secs(5));
 
-    let val_res = get_string_key_val_from_srv(&format!("http://{}", insert_bk.clone()), &"hello".to_string()).await;
-    assert_eq!(val_res.is_ok(), true);
-    let val = val_res.unwrap();
-    assert_eq!(val.is_some(), true);
-    assert_eq!(val.unwrap(), "world".to_string());
+    log::info!("checking key on server {}", insert_bk);
+    let val_res = get_string_key_val_from_srv(insert_bk, &"hello".to_string()).await?;
+    assert_eq!(val_res.is_some(), true);
+    assert_eq!(val_res.unwrap(), "world".to_string());
     Ok(())
 }
 
-
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_fault_tolerance_keeper_fail() -> TribResult<()> {
-
-    // start a cluster of 5 backends
-    let (bk1_handle, bk1_shutdown) = setup_backend(Some(&"127.0.0.1:8000"), None).await?;
-    let (bk2_handle, bk2_shutdown) = setup_backend(Some(&"127.0.0.1:8001"), None).await?;
-    let (bk3_handle, bk3_shutdown) = setup_backend(Some(&"127.0.0.1:8002"), None).await?;
-    let (bk4_handle, bk4_shutdown) = setup_backend(Some(&"127.0.0.1:8003"), None).await?;
-    let (bk5_handle, bk5_shutdown) = setup_backend(Some(&"127.0.0.1:8004"), None).await?;
-    let mut backs = vec!["127.0.0.1:8000".to_string(), "127.0.0.1:8001".to_string(), "127.0.0.1:8002".to_string(), "127.0.0.1:8003".to_string(), "127.0.0.1:8004".to_string()];
-    let keepers = vec!["127.0.0.1:8005".to_string(), "127.0.0.1:8006".to_string()];
-    backs.sort_by(|x, y| cons_hash(x).cmp(&cons_hash(y)));
-    let hashed_backends:Vec<u64> = backs.iter().map(|x| cons_hash(x)).collect();
-    
-    
-    // start the keeper
-    let (kp1_handle, kp1_shutdown) = setup_keeper(backs.clone(), keepers.clone(), 0, 0).await?;
-    let (kp2_handle, kp2_shutdown) = setup_keeper(backs.clone(), keepers.clone(), 1, 1).await?;
-
-
-    // store the same key-value pairs in two adjacent backends
-    let insert_pos = hashed_backends.binary_search(&cons_hash(&"hello".to_string())).unwrap_or_else(|x| x % hashed_backends.len());
-    let insert_bk = &backs[insert_pos];
-
-    // log::info!("primary set");
-    let mut primary_client = TribStorageClient::connect(format!("http://{}", insert_bk.clone())).await?;
-    primary_client.set(rpc::KeyValue {
-        key: "hello".to_string(),
-        value: "world".to_string(),
-    }).await;
-
-    // log::info!("backup set");
-    let backup_bk = &backs[(insert_pos + 1) % backs.len()];
-    let mut backup_client = TribStorageClient::connect(format!("http://{}", backup_bk.clone())).await?;
-    backup_client.set(rpc::KeyValue {
-        key: "hello".to_string(),
-        value: "world".to_string(),
-    }).await;
-
-    log::info!("sending shutdown signal to keeper 2...");
-
-    kp2_shutdown.send(()).await;
-
-    log::info!("sending shutdown signal to {}...", insert_bk);
-
-    // primary srv crash
-    match insert_bk.as_str() {
-        "127.0.0.1:8000" => { bk1_shutdown.send(()).await;},
-        "127.0.0.1:8001" => { bk2_shutdown.send(()).await;},
-        "127.0.0.1:8002" => { bk3_shutdown.send(()).await;},
-        "127.0.0.1:8003" => { bk4_shutdown.send(()).await;},
-        "127.0.0.1:8004" => { bk5_shutdown.send(()).await;},
-        _ => {},
-    };
-
-    sleep(Duration::from_secs(5));
-
-    let backup_srv_now = &backs[(insert_pos + 2) % backs.len()];
-    let val_res = get_string_key_val_from_srv(&format!("http://{}", backup_srv_now), &"hello".to_string()).await;
-    assert_eq!(val_res.is_ok(), true);
-    let val = val_res.unwrap();
-    assert_eq!(val.is_some(), true);
-    assert_eq!(val.unwrap(), "world".to_string());
-    Ok(())
-}

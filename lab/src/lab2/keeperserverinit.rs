@@ -712,7 +712,7 @@ impl KeeperServer {
         }
 
         // (3) check if its previous alive keeper is now dead
-        // this function also handles the migration of dead previous keeper's backends 
+        // this function also handles the migration of dead previous keeper's backends
         if self.keeper_addr != self.prev_keeper {
             let old_prev_keeper = self.prev_keeper.clone();
             self.check_prev_keeper().await;
