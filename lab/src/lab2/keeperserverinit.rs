@@ -434,7 +434,7 @@ impl KeeperServer {
     //      if so, update prev_keeper, and all fields related to backends
     pub async fn heart_beat(&mut self) -> TribResult<()> {
         let now = SystemTime::now();
-
+        log::info!("Starting heartbeat");
         let mut max_timestamp = 0;
         let mut list_dead_addr: Vec<String> = Vec::new();
         let mut list_alive_addr: Vec<String> = Vec::new();
@@ -484,8 +484,8 @@ impl KeeperServer {
                 Some(back) => {
                     if back.liveness == false {
                         self.set_back_recover_liveness(back.back_addr, true);
-
-                        self.join(&addr.clone());
+                        log::info!("found server recovered.");
+                        self.join(&addr.clone()).await;
                     }
                 }
                 None => {
@@ -529,8 +529,8 @@ impl KeeperServer {
                             Err(_) => {
                                 // this backend is really newly dead
                                 self.set_back_recover_liveness(addr.clone(), false);
-
-                                self.migrate(&addr.clone());
+                                log::info!("found server dead.");
+                                self.migrate(&addr.clone()).await;
                             }
                         };
                     }

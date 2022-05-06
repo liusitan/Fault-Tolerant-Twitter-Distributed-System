@@ -538,6 +538,7 @@ impl KeeperServer {
     }
 
     async fn migrate_string_keyval(&self, key: &String, val: &String, to_backend: &String) {
+        log::info!("migrating {} to {}", key, to_backend);
         let conn = TribStorageClient::connect(to_backend.clone()).await;
         if conn.is_ok() {
             let mut client = conn.unwrap();
