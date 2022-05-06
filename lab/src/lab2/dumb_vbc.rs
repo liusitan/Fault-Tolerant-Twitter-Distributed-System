@@ -57,7 +57,7 @@ impl VirBinStorageClient {
                 client::StorageClient::new(&my_addrs[hid]).await?,
             ))),
             client2: Arc::new(RwLock::new(Box::new(
-                client::StorageClient::new(&my_addrs[hid + 1]).await?,
+                client::StorageClient::new(&my_addrs[(hid + 1) % my_addrs.len()]).await?,
             ))),
             clients_update_at: RwLock::new(time::Instant::now()),
         });
@@ -88,10 +88,15 @@ impl VirBinStorageClient {
                     println!("generate client1 {}", id);
                     id += 1;
                     c1_candidate = x;
+                    id %= self.backs.len();
+
                     break;
                 }
-                Err(_) => {
+                Err(err) => {
+                    println!("{:?}", err);
                     id = id + 1;
+                    id %= self.backs.len();
+
                     continue;
                 }
             }
@@ -107,11 +112,15 @@ impl VirBinStorageClient {
                     println!("generate client2  id{}", id);
                     c2_candidate = x;
                     id += 1;
+                    id %= self.backs.len();
 
                     break;
                 }
-                Err(_) => {
+                Err(err) => {
+                    println!("{:?}", err);
                     id = id + 1;
+                    id %= self.backs.len();
+
                     continue;
                 }
             }
@@ -139,14 +148,16 @@ impl Storage for VirBinStorageClient {
         let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
         let mut c1 = match unlock_1.clock(at_least).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
                 unlock_1.clock(0).await? // let unlock_mut = unlock_2.as_mut();
             }
         };
         let mut c2 = match unlock_2.clock(at_least).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
                 unlock_2.clock(c1).await? // let unlock_mut = unlock_2.as_mut();
                                           // let unlock_mut = unlock_2.as_mut();
@@ -155,7 +166,8 @@ impl Storage for VirBinStorageClient {
         let mut cmax = std::cmp::max(c1, c2);
         cmax = match unlock_1.clock(cmax).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.clock(cmax).await?
@@ -163,7 +175,8 @@ impl Storage for VirBinStorageClient {
         };
         cmax = match unlock_1.clock(cmax).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.clock(cmax).await?
@@ -171,7 +184,8 @@ impl Storage for VirBinStorageClient {
         };
         let c2 = match unlock_2.clock(cmax).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.clock(cmax).await?
@@ -213,7 +227,8 @@ impl KeyString for VirBinStorageClient {
 
         let res1 = match unlock_1.list_get(composed_key.as_str()).await {
             Ok(x) => x.0,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.list_get(composed_key.as_str()).await?.0
@@ -223,7 +238,8 @@ impl KeyString for VirBinStorageClient {
 
         let res2 = match unlock_2.list_get(composed_key.as_str()).await {
             Ok(x) => x.0,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2.list_get(composed_key.as_str()).await?.0
@@ -280,7 +296,8 @@ impl KeyString for VirBinStorageClient {
         match unlock_1.list_append(&kv_log).await {
             // Ok(x) => (println!("{}", x)),
             Ok(_) => (),
-            Err(_) => {
+            Err(err) => {
+                // println!("{:?}", err.source().unwarp().);
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.list_append(&kv_log).await?;
@@ -289,7 +306,8 @@ impl KeyString for VirBinStorageClient {
         match unlock_2.list_append(&kv_log).await {
             // Ok(x) => (println!("{}", x)),
             Ok(_) => (),
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2.list_append(&kv_log).await?;
@@ -312,7 +330,8 @@ impl KeyString for VirBinStorageClient {
         p_clone.prefix = self.wrap_with_user_name(&ks_log_key_wrapper(&p_clone.prefix));
         let l1 = match unlock_1.list_keys(&p_clone).await {
             Ok(x) => x.0,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.list_keys(&p_clone).await?.0
@@ -325,7 +344,8 @@ impl KeyString for VirBinStorageClient {
         // println!("length:{} res1: {:?}", l1.0.len(), res1);
         let l2 = match unlock_2.list_keys(&p_clone).await {
             Ok(x) => x.0,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2.list_keys(&p_clone).await?.0
@@ -365,7 +385,8 @@ impl KeyList for VirBinStorageClient {
                     })
                     .collect()
             }
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1
@@ -390,7 +411,8 @@ impl KeyList for VirBinStorageClient {
                     })
                     .collect()
             }
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2
@@ -433,7 +455,8 @@ impl KeyList for VirBinStorageClient {
         };
         let c1 = match unlock_1.list_append(&kv_send).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.list_append(&kv_send).await?
@@ -441,7 +464,8 @@ impl KeyList for VirBinStorageClient {
         };
         let c2 = match unlock_2.list_append(&kv_send).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2.list_append(&kv_send).await?
@@ -476,7 +500,8 @@ impl KeyList for VirBinStorageClient {
         });
         let c1 = match unlock_1.list_append(&kv_send).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.list_append(&kv_send).await?
@@ -484,7 +509,8 @@ impl KeyList for VirBinStorageClient {
         };
         let c2 = match unlock_2.list_append(&kv_send).await {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2.list_append(&kv_send).await?
@@ -504,7 +530,8 @@ impl KeyList for VirBinStorageClient {
         p_clone.prefix = self.wrap_with_user_name(&kl_log_key_wrapper(&p_clone.prefix));
         let k1 = match unlock_1.list_keys(&p_clone).await {
             Ok(x) => x.0,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_1.list_keys(&p_clone).await?.0
@@ -513,7 +540,8 @@ impl KeyList for VirBinStorageClient {
         // println!("xxxxxxx{:?}", k1);
         let k2 = match unlock_2.list_keys(&p_clone).await {
             Ok(x) => x.0,
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err.to_string());
                 (unlock_1, unlock_2) = self.reconfigureclients().await?;
 
                 unlock_2.list_keys(&p_clone).await?.0
