@@ -82,6 +82,11 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         }
     };
 
+    // init RPCKeeperServer
+    // This thread will send ready signal
+    let (stop_rpc, mut stop_sign): (oneshot::Sender<()>, _) = oneshot::channel();
+    tokio::spawn(serve_my_keeper_rpc(addr.clone(), kc.ready, stop_sign));
+
     let backs: Vec<String> = kc
         .backs
         .clone()
@@ -108,11 +113,8 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         list_all_back_chord: Vec::new(), //inited
 
         prev_keeper: "".to_string(),             //inited
-        prev_alive_keeper_list_back: Vec::new(), // TODO: do we still need this?
-        debug_timer: SystemTime::now(),
+        debug_timer: SystemTime::now(),            //inited
     };
-
-    // TODO: what if this keeper is restarted?
 
     // init its backends_recover and backends_clock
     this_keeper.init_back_recover_and_clock(backs.clone(), keepers.clone());
@@ -135,11 +137,6 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
 
     // init prev_keeper, doesn't care whether the previous keeper is alive or not
     this_keeper.init_prev_keeper();
-
-    // init RPCKeeperServer
-    // This thread will send ready signal
-    let (stop_rpc, mut stop_sign): (oneshot::Sender<()>, _) = oneshot::channel();
-    tokio::spawn(serve_my_keeper_rpc(addr.clone(), kc.ready, stop_sign));
 
     // sleep for a while before we first start heartbeat
     // TODO: can we find a better way than this to solve the problem of uninitialized keepers?

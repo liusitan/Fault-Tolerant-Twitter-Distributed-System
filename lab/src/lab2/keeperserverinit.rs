@@ -379,7 +379,7 @@ impl KeeperServer {
 
     // called after check_prev_keeper changes keeper
     // updates list_back_recover, list_back_clock based on self.prev_keeper
-    pub fn update_back_recover(&mut self) {
+    pub async fn update_back_recover(&mut self) {
         // use a two keeper vec [self, self.prev_keeper], see which backends should be handled by self and not already in self.list_back_recover
         let mut pair_keeper = vec![
             ChordObject {
@@ -414,6 +414,15 @@ impl KeeperServer {
                     None => {
                         // if we don't have it, add it to list_back_recover
                         self.add_back_recover(back_obj.addr.clone());
+                        // set the liveness of back_obj.addr. No need to handle anything here, since check_prev_keeper has already done that
+                        match TribStorageClient::connect(back_obj.addr.clone()).await {
+                            Ok(_) => {
+                                self.set_back_recover_liveness(back_obj.addr.clone(), true);
+                            }
+                            Err(_) => {
+                                self.set_back_recover_liveness(back_obj.addr.clone(), false);
+                            }
+                        };
                     }
                 }
             }
@@ -543,7 +552,6 @@ impl KeeperServer {
 
                 self.deduct_back_recover(list_remove_back.clone());
                 self.prev_keeper = added_keeper.clone();
-                // TODO: do we still need prev_alive_keeper_list_back?
 
                 self.update_back_clock();
             }
@@ -704,10 +712,11 @@ impl KeeperServer {
         }
 
         // (3) check if its previous alive keeper is now dead
-        // TODO: ask Qizeng if this function also handles the update of self.backends, and migration of dead previous keeper's backends
+        // this function also handles the migration of dead previous keeper's backends 
         if self.keeper_addr != self.prev_keeper {
             let old_prev_keeper = self.prev_keeper.clone();
             self.check_prev_keeper().await;
+            // update self.list_back_recover and self.list_back_clock
             if old_prev_keeper == self.prev_keeper.clone() {
                 self.update_back_recover();
             }

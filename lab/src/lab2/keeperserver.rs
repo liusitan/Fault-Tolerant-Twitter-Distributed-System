@@ -18,8 +18,6 @@ pub struct KeeperServer {
     pub list_back_recover: Vec<BackendStatus>, // Same as backends // list of backends that this keeper is responsible for (controls migrate and join)
     pub list_back_clock: Vec<String>, // list of backends that this keeper needs to sync the clock for. This list extends list_back_recover by 1 backend on left and right
     pub list_all_back_chord: Vec<ChordObject>, // list of all backends, no matter they are alive or not, no matter this keeper is responsible for or not
-    pub prev_alive_keeper_list_back: Vec<BackendStatus>, // list of backends that previous keeper is responsible for
-    // this keeper will check their liveness every 10 seconds
     pub debug_timer: SystemTime,
 }
 
