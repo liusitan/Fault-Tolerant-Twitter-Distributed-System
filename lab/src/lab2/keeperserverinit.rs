@@ -17,7 +17,7 @@ use tribbler::err::TribResult;
 use tribbler::rpc;
 use tribbler::rpc::trib_storage_client::TribStorageClient;
 
-pub const PRINT_DEBUG: bool = true;
+pub const PRINT_DEBUG: bool = false;
 pub const PRINT_STATUS: bool = true;
 const CLOCK_TIMEOUT_MS: u64 = 300; // when a backend failed to connect, we sleep for CLOCK_TIMEOUT_MS ms, and give it one chance
 pub const KEEPER_INIT_DELAY_MS: u64 = 500; // when a keeper is initialized, sleep for KEEPER_INIT_DELAY_MS ms, and then start the heart_beat loop
@@ -540,6 +540,8 @@ impl KeeperServer {
     // (4) check if any keeper between it and its previous alive keeper is now added
     //      if so, update prev_keeper, and all fields related to backends
     pub async fn heart_beat(&mut self) -> TribResult<()> {
+        let now = SystemTime::now();
+        log::info!("Starting heartbeat");
         let mut max_timestamp = 0;
         let mut list_dead_addr: Vec<String> = Vec::new();
         let mut list_alive_addr: Vec<String> = Vec::new();
@@ -589,7 +591,8 @@ impl KeeperServer {
                         }
                         self.set_back_recover_liveness(back.back_addr.clone(), true);
 
-                        self.join(&back.back_addr.clone()).await;
+                        log::info!("found server recovered.");
+                        self.join(&addr.clone()).await;
                     }
                 }
                 None => {
@@ -640,7 +643,7 @@ impl KeeperServer {
                                 }
                                 // this backend is really newly dead
                                 self.set_back_recover_liveness(addr.clone(), false);
-
+                                log::info!("found server dead.");
                                 self.migrate(&addr.clone()).await;
                             }
                         };

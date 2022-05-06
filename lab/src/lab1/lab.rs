@@ -1,3 +1,4 @@
+use super::client::StorageClient;
 // use super::client::{Newhack, StorageClient};
 use super::server::MyStorageServer;
 use super::vbc_test::VirBinStorageClient;
@@ -102,7 +103,8 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
 /// trait. It should communicate with the backend that is started in the
 /// [serve_back] function.
 pub async fn new_client(addr: &str) -> TribResult<Box<dyn storage::Storage>> {
-    Ok(Box::new(
-        VirBinStorageClient::new(&vec![addr.to_owned().to_string()], "sitan").await?,
-    ))
+    return Ok(Box::new(StorageClient::new(addr).await?));
+    // Ok(Box::new(
+    //     StorageClient::new(&vec![addr.to_owned().to_string()], "sitan").await?,
+    // ))
 }
