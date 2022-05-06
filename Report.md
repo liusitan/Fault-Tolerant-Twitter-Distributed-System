@@ -22,7 +22,7 @@ Our system is designed to be fault tolerant. To be specific, clients (and fronte
 
 ### 3.1 Fault Tolerance of backend
 
-The Fault Tolerance of the backend is achieved both by the bin-client operation and keeper migration behaviors. First, each data is ensured to be written to two backends by the bin client. In this way, if either one of the  backends fails, the keeper will detect it and migrate the data. As for the client, it changes its two servers, and continues what it usually does. For a bin client, each call to the bin client has to combine the info from the two servers, so the failure of a single server would  not affect the consistency of the bin-clients interface semantics. If a node dies, another node will be chosen by the bin-client,and the query operation will combine the both of them to get the current state, since one of them must have all the logs. So fault tolerance is achieved. 
+The Fault Tolerance of the backend is achieved both by the bin-client operation and keeper migration behaviors. First, each data is ensured to be written to two backends by the bin client. In this way, if either one of the  backends fails, the keeper will detect it and migrate the data. As for the client, it changes its two backends, and continues what it usually does. For a bin client, each call to the bin client has to combine the info from the two servers, so the failure of a single server would  not affect the consistency of the bin-clients interface semantics. If a node dies, another node will be chosen by the bin-client,and the query operation will combine the both of them to get the current state, since one of them must have all the logs. So fault tolerance is achieved. 
 
 Keepers are responsible for migrating data from one server to another for fault tolerance. To be more specific, each keeper is assigned a list of backends that it should check every second. Once it detects a backend failure, it will move data accordingly to bring the system back into a consistent state. Keepers also use write-ahead logs such that one keeper task could be handed over to others during keeper failures.
 
@@ -34,4 +34,5 @@ Each keeper keeps track of its previous keepers on the consistent hash ring. Eve
 Each ip address of keeper and the backends will be hashed by rust’s default hasher by the “http://” + ip address(ex: “http://0.0.0.0:2322”), and each bin name will be hashed by the “bin#biname”. In this way they are all mapped to the u64 ring. For each bin’s position on the ring, we use binary search to determine. 
 
 Reference
+
 [1] ​​Ion Stoica, Robert Morris, David Liben-Nowell, David R. Karger, M. Frans Kaashoek, Frank Dabek, and Hari Balakrishnan. 2003. Chord: a scalable peer-to-peer lookup protocol for internet applications. IEEE/ACM Trans. Netw. 11, 1 (February 2003), 17–32. https://doi.org/10.1109/TNET.2002.808407
