@@ -208,7 +208,7 @@ impl KeeperServer {
     // it can also be used anytime to update list_back_clock as long as field backends is up-to-date
     fn update_back_clock(&mut self) {
         self.list_back_clock = Vec::new();
-        if self.backends.len() == 0 {
+        if self.list_back_recover.len() == 0 {
             return;
         }
 
@@ -219,9 +219,9 @@ impl KeeperServer {
 
         // compute the list of index of backends self is responsible for
         let mut list_recover_back_index: Vec<usize> = Vec::new();
-        for back_hash in self.hashed_backends.clone() {
+        for back_obj in self.list_back_recover.clone() {
             let index_back = list_all_back_hash
-                .binary_search(&back_hash)
+                .binary_search(&bin_aware_cons_hash(&back_obj.back_addr.clone()))
                 .unwrap_or_else(|x| x % list_all_back_hash.len());
             list_recover_back_index.push(index_back);
         }
@@ -359,30 +359,24 @@ impl KeeperServer {
 
                 // update self.backends, hashed_backends, list_back_recover, list_back_clock, prev_keeper, prev_alive_keeper_list_back
                 let mut new_backends: Vec<String> = Vec::new();
-                for back in self.backends.clone() {
+                for back_obj in self.list_back_recover.clone() {
                     match list_remove_back
                         .clone()
                         .into_iter()
-                        .find(|x| *x == back.clone())
+                        .find(|x| *x == back_obj.back_addr.clone())
                     {
                         Some(_) => (),
                         None => {
                             // didn't find back in list_remove_back, meaning this back should be in new self.backends
-                            new_backends.push(back.clone());
+                            new_backends.push(back_obj.back_addr.clone());
                         }
                     }
                 }
-                self.backends = new_backends.clone();
 
                 self.deduct_back_recover(new_backends.clone());
                 self.prev_keeper = added_keeper.clone();
                 // TODO: do we still need prev_alive_keeper_list_back?
 
-                self.hashed_backends = Vec::new();
-                for back in new_backends.clone() {
-                    self.hashed_backends
-                        .push(bin_aware_cons_hash(&back.clone()));
-                }
                 self.update_back_clock();
             }
             None => return,
@@ -491,10 +485,13 @@ impl KeeperServer {
                     if back.liveness == false {
                         self.set_back_recover_liveness(back.back_addr, true);
 
-                        // TODO: handle join
+                        self.join(&addr.clone());
                     }
                 }
-                None => println!("Error: impossible None result in step (2)"),
+                None => {
+                    // this backend is in list_back_clock but not in list_back_recover
+                    // no need to do anything to it
+                }
             }
         }
 
@@ -533,12 +530,15 @@ impl KeeperServer {
                                 // this backend is really newly dead
                                 self.set_back_recover_liveness(addr.clone(), false);
 
-                                // TODO: handle migration
+                                self.migrate(&addr.clone());
                             }
                         };
                     }
                 }
-                None => println!("Error: impossible None result in step (1)"),
+                None => {
+                    // this backend is in list_back_clock but not in list_back_recover
+                    // no need to do anything to it
+                }
             }
         }
 
