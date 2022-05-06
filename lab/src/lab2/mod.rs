@@ -169,6 +169,7 @@
 //! Happy Lab 3. :-)
 mod binstorage;
 mod client;
+mod dumb_vbc;
 mod dumbkeeper;
 mod front;
 mod keeperserver;
@@ -176,7 +177,7 @@ mod keeperserverinit;
 pub mod lab;
 mod server;
 pub mod utility;
-pub mod virtualized_bin_client;
+// pub mod virtualized_bin_client;
 pub use crate::lab2::lab::new_bin_client;
 pub use crate::lab2::lab::new_front;
 pub use crate::lab2::lab::serve_keeper;

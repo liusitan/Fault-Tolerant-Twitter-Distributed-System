@@ -38,9 +38,12 @@ const SEPARATOR: &str = "|";
 
 impl VirBinStorageClient {
     pub async fn new(addrs: &Vec<String>, name: &str) -> TribResult<VirBinStorageClient> {
-        let hashed_addrs: Vec<u64> = addrs.iter().map(|x| cons_hash(x)).collect();
+        let hashed_addrs: Vec<u64> = addrs
+            .iter()
+            .map(|x| cons_hash(&("http://".to_string() + x)))
+            .collect();
         let mut my_addrs = addrs.clone();
-        my_addrs.sort_by_key(|x| cons_hash(x));
+        my_addrs.sort_by_key(|x| cons_hash(&("http://".to_string() + x)));
         let mut hid = hashed_addrs
             .binary_search(&cons_hash(&name.to_string()))
             .unwrap_or_else(|x| x % addrs.len());
@@ -54,7 +57,7 @@ impl VirBinStorageClient {
                 client::StorageClient::new(&my_addrs[hid]).await?,
             ))),
             client2: Arc::new(RwLock::new(Box::new(
-                client::StorageClient::new(&my_addrs[(hid + 1) % my_addrs.len()]).await?,
+                client::StorageClient::new(&my_addrs[hid + 1]).await?,
             ))),
             clients_update_at: RwLock::new(time::Instant::now()),
         });
@@ -62,17 +65,11 @@ impl VirBinStorageClient {
 
     // async fn reconfigureclient1(&mut self) -> TribResult<()> {
 
-    pub async fn reconfigureclients(&self) -> TribResult<()> {
+    pub async fn reconfigureclients(
+        &self,
+    ) -> TribResult<(client::StorageClient, client::StorageClient)> {
         println!("reconfiguring clients");
-        let n = time::Instant::now();
-        let mut ts = self.clients_update_at.write().await;
-        // if (n.duration_since(*ts) <= time::Duration::from_secs(20)) {
-        //     return Ok(());
-        // }
-        // println!("72");
 
-        let c1 = self.client1.clone();
-        let mut c1_write = c1.write().await;
         // println!("74");
 
         // match c1_write.get("").await {
@@ -80,7 +77,6 @@ impl VirBinStorageClient {
         //     Err(err) => println!("{:?}", err),
         // }
         let mut c1_candidate;
-        let mut id = self.hashid;
         let c2 = self.client2.clone();
         let mut c2_write = c2.write().await;
         let mut c2_candidate;
@@ -89,43 +85,39 @@ impl VirBinStorageClient {
         loop {
             match client::StorageClient::new(&self.backs[id]).await {
                 Ok(x) => {
+                    println!("generate client1 {}", id);
+                    id += 1;
                     c1_candidate = x;
                     break;
                 }
                 Err(_) => {
                     id = id + 1;
-                    id %= self.backs.len();
                     continue;
                 }
             }
         }
-        (*c1_write) = Box::new(c1_candidate);
         // match c1_write.get("").await {
         //     Ok(x) => (),
         //     Err(err) => println!("{:?}", err),
         // }
 
-        let mut helper_count = 2;
         loop {
             match client::StorageClient::new(&self.backs[id]).await {
                 Ok(x) => {
+                    println!("generate client2  id{}", id);
                     c2_candidate = x;
-                    helper_count -= 1;
-                    if helper_count == 0 {
-                        break;
-                    }
+                    id += 1;
+
+                    break;
                 }
                 Err(_) => {
                     id = id + 1;
-                    id %= self.backs.len();
                     continue;
                 }
             }
         }
-        (*c2_write) = Box::new(c2_candidate);
-        *ts = time::Instant::now();
-        println!("{:?}", "reconfiguration finished");
-        return Ok(());
+
+        return Ok((c1_candidate, c2_candidate));
     }
 
     fn wrap_with_user_name(&self, s: &str) -> String {
@@ -141,65 +133,47 @@ impl VirBinStorageClient {
 #[async_trait] // VERY IMPORTANT !!
 impl Storage for VirBinStorageClient {
     async fn clock(&self, at_least: u64) -> TribResult<u64> {
-        println!("clock starts");
-        self.reconfigureclients().await?;
-
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await; //.map_err(|e| e.to_string())?;
-                                                      // let unlock_mut = unlock_2.as_mut();
+        // let mut unlock_1 = self.client1.read().await;
+        // let mut unlock_2 = self.client2.read().await; //.map_err(|e| e.to_string())?;
+        //
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
         let mut c1 = match unlock_1.clock(at_least).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_2);
-                drop(unlock_1);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
-                unlock_1.clock(at_least).await?
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+                unlock_1.clock(0).await? // let unlock_mut = unlock_2.as_mut();
             }
         };
         let mut c2 = match unlock_2.clock(at_least).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_2);
-                drop(unlock_1);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
-                unlock_1.clock(at_least).await?
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+                unlock_2.clock(c1).await? // let unlock_mut = unlock_2.as_mut();
+                                          // let unlock_mut = unlock_2.as_mut();
             }
         };
         let mut cmax = std::cmp::max(c1, c2);
         cmax = match unlock_1.clock(cmax).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_2);
-                drop(unlock_1);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.clock(cmax).await?
             }
         };
         cmax = match unlock_1.clock(cmax).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_2);
-                drop(unlock_1);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.clock(cmax).await?
             }
         };
         let c2 = match unlock_2.clock(cmax).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_2);
-                drop(unlock_1);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.clock(cmax).await?
             }
         };
@@ -235,31 +209,28 @@ impl KeyString for VirBinStorageClient {
 
         let composed_key = self.wrap_with_user_name(&ks_log_key_wrapper(key));
 
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
 
         let res1 = match unlock_1.list_get(composed_key.as_str()).await {
             Ok(x) => x.0,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.list_get(composed_key.as_str()).await?.0
             }
         };
+        println!("c1list: {:?}", res1);
+
         let res2 = match unlock_2.list_get(composed_key.as_str()).await {
             Ok(x) => x.0,
             Err(_) => {
-                drop(unlock_2);
-                drop(unlock_1);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2.list_get(composed_key.as_str()).await?.0
             }
         };
+        println!("c2list: {:?}", res2);
+
         println!("finished two request");
         let mut cmax = 0;
         let mut vret = None;
@@ -297,8 +268,8 @@ impl KeyString for VirBinStorageClient {
 
         self.reconfigureclients().await?;
 
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
+
         // println!("ssssssssss{:?}", kv);
         let mut kv_log = kv.clone();
         // let composed_key = );
@@ -310,11 +281,8 @@ impl KeyString for VirBinStorageClient {
             // Ok(x) => (println!("{}", x)),
             Ok(_) => (),
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.list_append(&kv_log).await?;
             }
         };
@@ -322,11 +290,8 @@ impl KeyString for VirBinStorageClient {
             // Ok(x) => (println!("{}", x)),
             Ok(_) => (),
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2.list_append(&kv_log).await?;
             }
         };
@@ -340,8 +305,7 @@ impl KeyString for VirBinStorageClient {
     async fn keys(&self, p: &Pattern) -> TribResult<List> {
         self.reconfigureclients().await;
 
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
 
         // println!("kkkkkkkk");
         let mut p_clone = p.clone();
@@ -349,11 +313,8 @@ impl KeyString for VirBinStorageClient {
         let l1 = match unlock_1.list_keys(&p_clone).await {
             Ok(x) => x.0,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.list_keys(&p_clone).await?.0
             }
         };
@@ -365,11 +326,8 @@ impl KeyString for VirBinStorageClient {
         let l2 = match unlock_2.list_keys(&p_clone).await {
             Ok(x) => x.0,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2.list_keys(&p_clone).await?.0
             }
         };
@@ -395,8 +353,7 @@ impl KeyList for VirBinStorageClient {
         self.reconfigureclients().await;
 
         // println!("llllllllllll");
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
 
         let wrappedkey = self.wrap_with_user_name(&kl_log_key_wrapper(key));
         let mut c1list: Vec<ListOpLog> = match unlock_1.list_get(&wrappedkey).await {
@@ -409,11 +366,8 @@ impl KeyList for VirBinStorageClient {
                     .collect()
             }
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1
                     .list_get(&wrappedkey)
                     .await?
@@ -426,7 +380,7 @@ impl KeyList for VirBinStorageClient {
                     .collect()
             }
         };
-        // println!("{:?}", c1list);
+        println!("c1list: {:?}", c1list);
         let mut c2list: Vec<ListOpLog> = match unlock_2.list_get(&wrappedkey).await {
             Ok(x) => {
                 x.0.iter()
@@ -437,11 +391,8 @@ impl KeyList for VirBinStorageClient {
                     .collect()
             }
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2
                     .list_get(&wrappedkey)
                     .await?
@@ -454,7 +405,7 @@ impl KeyList for VirBinStorageClient {
                     .collect()
             }
         };
-        // println!("{:?}", c2list);
+        println!("c2list: {:?}", c2list);
 
         c1list.sort_by_key(|x| x.clock);
         c2list.sort_by_key(|x| x.clock);
@@ -467,8 +418,7 @@ impl KeyList for VirBinStorageClient {
     async fn list_append(&self, kv: &KeyValue) -> TribResult<bool> {
         self.reconfigureclients().await;
 
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
 
         let c = self.clock(0).await?;
         let wrappedkey = self.wrap_with_user_name(&kl_log_key_wrapper(&kv.key));
@@ -484,22 +434,16 @@ impl KeyList for VirBinStorageClient {
         let c1 = match unlock_1.list_append(&kv_send).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.list_append(&kv_send).await?
             }
         };
         let c2 = match unlock_2.list_append(&kv_send).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2.list_append(&kv_send).await?
             }
         };
@@ -510,8 +454,7 @@ impl KeyList for VirBinStorageClient {
     async fn list_remove(&self, kv: &KeyValue) -> TribResult<u32> {
         self.reconfigureclients().await;
 
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
 
         let c = self.clock(0).await?;
         let wrappedkey = self.wrap_with_user_name(&kl_log_key_wrapper(&kv.key));
@@ -534,22 +477,16 @@ impl KeyList for VirBinStorageClient {
         let c1 = match unlock_1.list_append(&kv_send).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.list_append(&kv_send).await?
             }
         };
         let c2 = match unlock_2.list_append(&kv_send).await {
             Ok(x) => x,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2.list_append(&kv_send).await?
             }
         };
@@ -561,19 +498,15 @@ impl KeyList for VirBinStorageClient {
         // println!("xxxxxxxxxxxxxx");
         self.reconfigureclients().await;
 
-        let mut unlock_1 = self.client1.read().await;
-        let mut unlock_2 = self.client2.read().await;
+        let (mut unlock_1, mut unlock_2) = self.reconfigureclients().await?; // let unlock_mut = unlock_2.as_mut();
 
         let mut p_clone = p.clone();
         p_clone.prefix = self.wrap_with_user_name(&kl_log_key_wrapper(&p_clone.prefix));
         let k1 = match unlock_1.list_keys(&p_clone).await {
             Ok(x) => x.0,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_1.list_keys(&p_clone).await?.0
             }
         };
@@ -581,11 +514,8 @@ impl KeyList for VirBinStorageClient {
         let k2 = match unlock_2.list_keys(&p_clone).await {
             Ok(x) => x.0,
             Err(_) => {
-                drop(unlock_1);
-                drop(unlock_2);
-                self.reconfigureclients().await;
-                unlock_1 = self.client1.read().await;
-                unlock_2 = self.client2.read().await;
+                (unlock_1, unlock_2) = self.reconfigureclients().await?;
+
                 unlock_2.list_keys(&p_clone).await?.0
             }
         };
